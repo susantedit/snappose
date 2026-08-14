@@ -1,0 +1,56 @@
+{
+  "app": {
+    "name": "Snap Pose",
+    "tagline": "Pose it. Snap it. Share it."
+  },
+  "onboarding": {
+    "page1": {
+      "title": "Find Your Perfect Pose",
+      "body": "Browse hundreds of professional poses across every style and setting."
+    },
+    "page2": {
+      "title": "Real-Time AI Guidance",
+      "body": "Our on-device AI tracks your body and guides you to nail every pose."
+    },
+    "page3": {
+      "title": "Capture the Moment",
+      "body": "Auto-capture fires at the perfect moment — you just pose."
+    },
+    "skip": "Skip",
+    "startExploring": "Start Exploring"
+  },
+  "camera": {
+    "stepIntoFrame": "Step into the frame.",
+    "tooClose": "Too Close",
+    "goodDistance": "Good Distance",
+    "tooFar": "Too Far",
+    "raiseLefArm": "Raise your left arm.",
+    "raiseRightArm": "Raise your right arm.",
+    "lookAtCamera": "Look toward the camera.",
+    "perfect": "Perfect!",
+    "smile": "Smile.",
+    "holdStill": "Hold still.",
+    "moveBack": "Move slightly backward.",
+    "moveCloser": "Move slightly forward."
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "noInternet": "No internet connection.",
+    "syncFailed": "Couldn't sync. Tap to retry.",
+    "storageFull": "Storage Full — Manage Storage",
+    "cameraPermission": "Camera access is required to use this feature.",
+    "photoPermission": "Photo library access is required to save captures."
+  },
+  "common": {
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "ok": "OK",
+    "save": "Save",
+    "delete": "Delete",
+    "share": "Share",
+    "download": "Download",
+    "loading": "Loading...",
+    "noResults": "No poses found",
+    "exploreCategories": "Explore Categories"
+  }
+}

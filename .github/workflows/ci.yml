@@ -1,0 +1,243 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────
+  # 1. Quality checks (fast — run in parallel)
+  # ─────────────────────────────────────────────
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: snap-pose
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: snap-pose/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: snap-pose
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: snap-pose/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier
+        run: npx prettier --check "src/**/*.{ts,tsx}" "app/**/*.{ts,tsx}"
+
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: snap-pose
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: snap-pose/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: npm audit
+        run: npm audit --audit-level=high
+
+  # ─────────────────────────────────────────────
+  # 2. Unit + property-based tests
+  # ─────────────────────────────────────────────
+  test:
+    name: Jest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: snap-pose
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: snap-pose/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npm run test:coverage -- --ci --reporters=default --reporters=github-actions
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: snap-pose/coverage/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # 3. EAS Preview build (PR only)
+  # ─────────────────────────────────────────────
+  eas-preview:
+    name: EAS Preview Build
+    runs-on: ubuntu-latest
+    # Only run on PRs targeting main or develop
+    if: github.event_name == 'pull_request'
+    # Must pass quality gates first
+    needs: [typecheck, lint, test]
+    defaults:
+      run:
+        working-directory: snap-pose
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: snap-pose/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS Preview build (Android APK)
+        run: eas build --platform android --profile preview --non-interactive --no-wait
+        env:
+          MONGODB_API_URL: ${{ secrets.MONGODB_API_URL }}
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
+          ADMOB_NATIVE_ID: ${{ secrets.ADMOB_NATIVE_ID }}
+          ADMOB_REWARDED_ID: ${{ secrets.ADMOB_REWARDED_ID }}
+          ADMOB_INTERSTITIAL_ID: ${{ secrets.ADMOB_INTERSTITIAL_ID }}
+          ADMOB_APP_OPEN_ID: ${{ secrets.ADMOB_APP_OPEN_ID }}
+
+      - name: Comment build link on PR
+        uses: actions/github-script@v7
+        if: success()
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ EAS Preview build triggered. Track progress at https://expo.dev/accounts/snappose/projects/snap-pose/builds'
+            })
+
+  # ─────────────────────────────────────────────
+  # 4. EAS Production build (main branch only)
+  # ─────────────────────────────────────────────
+  eas-production:
+    name: EAS Production Build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [typecheck, lint, test]
+    defaults:
+      run:
+        working-directory: snap-pose
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: snap-pose/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS Production build (Android AAB)
+        run: eas build --platform android --profile production --non-interactive --no-wait
+        env:
+          MONGODB_API_URL: ${{ secrets.MONGODB_API_URL }}
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
+          ADMOB_NATIVE_ID: ${{ secrets.ADMOB_NATIVE_ID }}
+          ADMOB_REWARDED_ID: ${{ secrets.ADMOB_REWARDED_ID }}
+          ADMOB_INTERSTITIAL_ID: ${{ secrets.ADMOB_INTERSTITIAL_ID }}
+          ADMOB_APP_OPEN_ID: ${{ secrets.ADMOB_APP_OPEN_ID }}
+
+  # ─────────────────────────────────────────────
+  # 5. EAS Update — OTA JS push (main branch)
+  # ─────────────────────────────────────────────
+  eas-update:
+    name: EAS Update (OTA)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [typecheck, lint, test]
+    defaults:
+      run:
+        working-directory: snap-pose
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: snap-pose/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Publish OTA update to production channel
+        run: eas update --branch production --message "OTA from ${{ github.sha }}" --non-interactive
+        env:
+          MONGODB_API_URL: ${{ secrets.MONGODB_API_URL }}
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
