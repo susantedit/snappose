@@ -5,9 +5,9 @@
   "scripts": {
     "start": "npx expo start --offline",
     "dev": "npx expo start --offline",
-    "build": "cd website && npm run build",
+    "build": "cd website && npm install && npm run build",
     "dev:web": "cd website && npm run dev",
-    "build:web": "cd website && npm run build",
+    "build:web": "cd website && npm install && npm run build",
     "android": "npx expo start --offline --android",
     "ios": "npx expo start --offline --ios",
     "web": "npx expo start --offline --web",
