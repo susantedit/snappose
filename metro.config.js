@@ -4,6 +4,8 @@ const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
+const defaultResolveRequest = config.resolver.resolveRequest;
+
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (
     moduleName === 'react-native-google-mobile-ads' &&
