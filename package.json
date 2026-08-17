@@ -5,6 +5,7 @@
   "scripts": {
     "start": "npx expo start",
     "dev": "npx expo start",
+    "build": "cd website && npm run build",
     "dev:web": "cd website && npm run dev",
     "build:web": "cd website && npm run build",
     "android": "npx expo start --android",

@@ -1,5 +1,7 @@
 node_modules/
 .expo/
+.next/
+website/.next/
 dist/
 web-build/
 .env
