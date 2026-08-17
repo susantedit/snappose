@@ -2,6 +2,7 @@
  * SPCaptureLimitModal — blocks capture at limit.
  *
  * Shows "Watch ad for 5 more captures" CTA and countdown to window reset.
+ * All icons rendered via crisp SVG SPIcon components.
  * [Req 28 — new capture limit UI]
  */
 
@@ -15,6 +16,7 @@ import {
   BorderRadius,
   AnimationDurations,
 } from '@/constants/designTokens';
+import { SPIcon } from '@/components/atoms/SPIcon';
 import {
   formatTimeUntilReset,
   type RateLimitCheck,
@@ -80,7 +82,9 @@ export function SPCaptureLimitModal({
           style={styles.sheet}
         >
           {/* Icon */}
-          <Text style={styles.icon}>📷</Text>
+          <View style={styles.iconCircle}>
+            <SPIcon name="camera" size={36} color={Colors.olive} strokeWidth={2} />
+          </View>
 
           {/* Title */}
           <Text style={styles.title} accessibilityRole="header">
@@ -113,9 +117,12 @@ export function SPCaptureLimitModal({
             accessibilityLabel="Watch an ad to get 5 more captures"
             accessibilityState={{ disabled: isAdLoading }}
           >
-            <Text style={styles.adButtonText}>
-              {isAdLoading ? 'Loading ad…' : '▶  Watch Ad for 5 More Captures'}
-            </Text>
+            <View style={styles.adRow}>
+              <SPIcon name="sparkles" size={18} color="#FFFFFF" strokeWidth={2.4} />
+              <Text style={styles.adButtonText}>
+                {isAdLoading ? 'Loading ad…' : 'Watch Ad for 5 More Captures'}
+              </Text>
+            </View>
           </Pressable>
 
           {/* Dismiss */}
@@ -153,8 +160,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.md,
   },
-  icon: {
-    fontSize: 48,
+  iconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(101, 116, 74, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: Spacing.xs,
   },
   title: {
@@ -200,6 +212,11 @@ const styles = StyleSheet.create({
   },
   adButtonDisabled: {
     opacity: 0.5,
+  },
+  adRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   adButtonText: {
     color: '#FFFFFF',

@@ -1,202 +1,240 @@
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ActivityIndicator,
-} from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { useTheme } from '@/constants/theme';
-import { Spacing, Typography, BorderRadius, Colors } from '@/constants/designTokens';
-
 /**
- * Category screen — displays the filtered pose list for a given category slug.
+ * CategoryScreen — app/category/[slug].tsx
  *
- * Full implementation delivered in Task 10 (2-column FlashList grid, shared-
- * element hero transition, SQLite-first + API background refresh).
- *
- * Deep-link entry: snappose://category/[slug]   [Req 47.2]
- * [Req 5]
+ * Full category browsing screen with hero banner, 2-column pose grid,
+ * difficulty badges, favorite toggles, and Try Pose actions.
+ * All icons rendered via crisp SVG SPIcon with spring micro-interactions.
  */
+
+import React, { useCallback, useMemo } from 'react';
+import {
+  Dimensions,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useTheme } from '@/constants/theme';
+import {
+  BorderRadius,
+  Colors,
+  Spacing,
+} from '@/constants/designTokens';
+import { SPPoseCard } from '@/components/molecules/SPPoseCard';
+import { SPToast, useToast } from '@/components/molecules/SPToast';
+import { SPIcon } from '@/components/atoms/SPIcon';
+import { SNAP_POSE_CATEGORIES, SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
+import { useFavorites } from '@/features/favorites/hooks/useFavorites';
+import type { Pose } from '@/features/poses/types';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const HORIZONTAL_PADDING = Spacing.md;
+const CARD_GAP = 12;
+const CARD_WIDTH = (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
+
 export default function CategoryScreen() {
-  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const { toastProps, showToast } = useToast();
 
-  // ---------------------------------------------------------------------------
-  // The data-fetching hook is wired in Task 10. Represent mandatory states so
-  // the screen is never blank. [Req 35.7]
-  // ---------------------------------------------------------------------------
-  const isLoading = false;
-  const isError = false;
-  const isEmpty = !slug;
-
-  if (isLoading) {
+  const category = useMemo(() => {
     return (
-      <View
-        style={[styles.centred, { backgroundColor: theme.colors.background }]}
-        accessibilityLabel="Loading category poses"
-      >
-        <ActivityIndicator
-          size="large"
-          color={theme.colors.olive}
-          accessibilityElementsHidden
-        />
-        <Text
-          style={[styles.stateText, { color: theme.colors.textSecondary }]}
-          accessibilityLiveRegion="polite"
-        >
-          Loading poses…
-        </Text>
-      </View>
+      SNAP_POSE_CATEGORIES.find(
+        (c) => c.slug === slug || c.id === slug || c.name.toLowerCase() === slug?.toLowerCase()
+      ) ?? SNAP_POSE_CATEGORIES[1]
     );
-  }
+  }, [slug]);
 
-  if (isError) {
-    return (
-      <View
-        style={[styles.centred, { backgroundColor: theme.colors.background }]}
-      >
-        <Text style={[styles.errorTitle, { color: theme.colors.textPrimary }]}>
-          Something went wrong
-        </Text>
-        <Text style={[styles.stateText, { color: theme.colors.textSecondary }]}>
-          We couldn't load this category. Check your connection and try again.
-        </Text>
-        <Pressable
-          style={[styles.button, { backgroundColor: theme.colors.olive }]}
-          accessibilityRole="button"
-          accessibilityLabel="Retry loading category"
-          onPress={() => {
-            // retry wired in Task 10
-          }}
-        >
-          <Text style={styles.buttonText}>Retry</Text>
-        </Pressable>
-        <Pressable
-          style={styles.backLink}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-          onPress={() => router.back()}
-        >
-          <Text style={[styles.backLinkText, { color: theme.colors.olive }]}>
-            ← Go back
-          </Text>
-        </Pressable>
-      </View>
-    );
-  }
+  const poses = useMemo<Pose[]>(() => {
+    if (!category || category.id === 'all') return SNAP_POSE_DATASET;
+    return SNAP_POSE_DATASET.filter((p) => p.categoryId === category.id || p.category?.toLowerCase() === category.slug);
+  }, [category]);
 
-  if (isEmpty) {
-    return (
-      <View
-        style={[styles.centred, { backgroundColor: theme.colors.background }]}
-      >
-        <Text style={[styles.errorTitle, { color: theme.colors.textPrimary }]}>
-          No poses found
-        </Text>
-        <Text style={[styles.stateText, { color: theme.colors.textSecondary }]}>
-          There are no poses in this category yet.
-        </Text>
-        <Pressable
-          style={[styles.button, { backgroundColor: theme.colors.olive }]}
-          accessibilityRole="button"
-          accessibilityLabel="Explore all categories"
-          onPress={() => router.push('/(tabs)/search')}
-        >
-          <Text style={styles.buttonText}>Explore Categories</Text>
-        </Pressable>
-      </View>
-    );
-  }
+  const isDark = theme.mode === 'dark';
 
-  // ---------------------------------------------------------------------------
-  // Content state — scaffold replaced by full FlashList grid in Task 10.
-  // ---------------------------------------------------------------------------
+  const handleOpenPose = useCallback((id: string) => {
+    router.push({
+      pathname: '/pose/[id]',
+      params: { id },
+    });
+  }, []);
+
+  const handleTryPose = useCallback((id: string) => {
+    router.navigate({
+      pathname: '/(tabs)/camera',
+      params: { poseId: id },
+    });
+  }, []);
+
+  const handleToggleFavorite = useCallback(
+    (poseId: string) => {
+      const pose = SNAP_POSE_DATASET.find((p) => p.id === poseId);
+      if (pose) {
+        const wasFav = isFavorite(poseId);
+        toggleFavorite(pose);
+        showToast({
+          message: wasFav ? 'Removed from favorites' : 'Saved to favorites',
+          variant: wasFav ? 'info' : 'success',
+        });
+      }
+    },
+    [isFavorite, toggleFavorite, showToast]
+  );
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Back navigation */}
-      <Pressable
-        style={styles.backLink}
-        accessibilityRole="button"
-        accessibilityLabel="Go back"
-        onPress={() => router.back()}
+    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: insets.top + Spacing.sm,
+            paddingBottom: insets.bottom + 60,
+          },
+        ]}
       >
-        <Text style={[styles.backLinkText, { color: theme.colors.olive }]}>
-          ← Back
-        </Text>
-      </Pressable>
+        {/* Top Navigation Row */}
+        <View style={styles.topNav}>
+          <Pressable
+            onPress={() => router.back()}
+            style={[
+              styles.backButton,
+              { backgroundColor: isDark ? '#242424' : '#EAE4D8' },
+            ]}
+          >
+            <SPIcon name="arrowLeft" size={18} color={isDark ? '#FFF' : Colors.textPrimary} strokeWidth={2.4} />
+          </Pressable>
+          <View style={styles.headingRow}>
+            <SPIcon name={category.icon ?? 'sparkles'} size={18} color={Colors.olive} strokeWidth={2.2} />
+            <Text style={[styles.categoryHeading, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
+              {category.name}
+            </Text>
+          </View>
+          <View style={{ width: 40 }} />
+        </View>
 
-      {/* Category header */}
-      <Text
-        style={[styles.categoryTitle, { color: theme.colors.textPrimary }]}
-        accessibilityRole="header"
-      >
-        {slug
-          ? slug.charAt(0).toUpperCase() + slug.slice(1).replace(/-/g, ' ')
-          : 'Category'}
-      </Text>
+        {/* Category Hero Banner */}
+        <Animated.View entering={FadeIn.duration(350)} style={styles.heroCard}>
+          <Image source={{ uri: category.image }} style={styles.heroImg} resizeMode="cover" />
+          <View style={styles.heroOverlay} />
+          <View style={styles.heroContent}>
+            <Text style={styles.heroTitle}>{category.name} Photography</Text>
+            <Text style={styles.heroCount}>{poses.length} curated pose inspirations</Text>
+          </View>
+        </Animated.View>
 
-      <Text style={[styles.stateText, { color: theme.colors.textSecondary }]}>
-        Full grid with FlashList implemented in Task 10.
-      </Text>
+        {/* Poses Grid */}
+        <View style={styles.posesGrid}>
+          {poses.map((pose, index) => (
+            <Animated.View
+              key={pose.id}
+              entering={FadeInDown.duration(300).delay(index * 30)}
+              style={{ width: CARD_WIDTH }}
+            >
+              <SPPoseCard
+                id={pose.id}
+                name={pose.title}
+                category={pose.category ?? pose.categoryId}
+                imageUri={pose.imageUrl}
+                difficulty={pose.difficulty}
+                isFavorite={isFavorite(pose.id)}
+                width={CARD_WIDTH}
+                height={CARD_WIDTH * 1.35}
+                onPress={handleOpenPose}
+                onFavoritePress={handleToggleFavorite}
+                onCameraPress={handleTryPose}
+              />
+            </Animated.View>
+          ))}
+        </View>
+      </ScrollView>
+
+      <SPToast {...toastProps} />
     </View>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    padding: Spacing.md,
   },
-  centred: {
-    flex: 1,
+  scrollContent: {
+    paddingHorizontal: HORIZONTAL_PADDING,
+  },
+  topNav: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: Spacing.xl,
+    justifyContent: 'space-between',
+    marginBottom: Spacing.md,
   },
-  stateText: {
-    fontSize: Typography.sizes.body,
-    textAlign: 'center',
-    marginTop: Spacing.xs,
-    lineHeight: 24,
-  },
-  errorTitle: {
-    fontSize: Typography.sizes.h3,
-    fontWeight: Typography.weights.semibold,
-    textAlign: 'center',
-    marginBottom: Spacing.xs,
-  },
-  button: {
-    marginTop: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.button,
-    minHeight: 48,
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonText: {
-    color: Colors.textInverse,
-    fontSize: Typography.sizes.body,
-    fontWeight: Typography.weights.semibold,
+  headingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  backLink: {
-    paddingVertical: Spacing.sm,
-    minHeight: 48,
-    justifyContent: 'center',
+  categoryHeading: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.4,
   },
-  backLinkText: {
-    fontSize: Typography.sizes.body,
-    fontWeight: Typography.weights.medium,
+  heroCard: {
+    width: '100%',
+    height: 160,
+    borderRadius: BorderRadius.card,
+    overflow: 'hidden',
+    marginBottom: Spacing.lg,
+    position: 'relative',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
-  categoryTitle: {
-    fontSize: Typography.sizes.h2,
-    fontWeight: Typography.weights.bold,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.xs,
+  heroImg: {
+    width: '100%',
+    height: '100%',
+  },
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  heroContent: {
+    position: 'absolute',
+    bottom: Spacing.md,
+    left: Spacing.md,
+    right: Spacing.md,
+  },
+  heroTitle: {
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  heroCount: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  posesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: CARD_GAP,
+    justifyContent: 'space-between',
   },
 });

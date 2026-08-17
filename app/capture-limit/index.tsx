@@ -2,9 +2,9 @@
  * CaptureLimitScreen — explains free 10-photo/6hr limit, rewarded ad unlock,
  * and shows a live countdown to window reset.
  *
+ * All icons rendered via crisp SVG SPIcon components with smooth micro-interactions.
  * [Req 28 — new capture limit UI]
  */
-
 
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -20,7 +20,7 @@ import {
   Spacing,
   Typography,
 } from '@/constants/designTokens';
-
+import { SPIcon } from '@/components/atoms/SPIcon';
 import {
   checkCaptureAllowed,
   formatTimeUntilReset,
@@ -29,11 +29,6 @@ import {
   BONUS_PER_AD,
   type RateLimitCheck,
 } from '@/features/camera/domain/CaptureRateLimit';
-
-// ---------------------------------------------------------------------------
-// CaptureLimitScreen
-// ---------------------------------------------------------------------------
-
 import { AdMobAdapter } from '@/features/ads/infrastructure/AdMobAdapter';
 
 export default function CaptureLimitScreen() {
@@ -67,7 +62,6 @@ export default function CaptureLimitScreen() {
         setCheck(checkCaptureAllowed());
       }
     } catch {
-      // In dev or offline environment fallback: grant bonus captures
       grantBonusCaptures();
       setCheck(checkCaptureAllowed());
     } finally {
@@ -94,7 +88,10 @@ export default function CaptureLimitScreen() {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Text style={[styles.backText, { color: Colors.olive }]}>← Back</Text>
+          <View style={styles.backRow}>
+            <SPIcon name="arrowLeft" size={18} color={Colors.olive} strokeWidth={2.4} />
+            <Text style={[styles.backText, { color: Colors.olive }]}>Back</Text>
+          </View>
         </Pressable>
 
         {/* Icon */}
@@ -102,7 +99,9 @@ export default function CaptureLimitScreen() {
           entering={FadeInDown.delay(50).duration(AnimationDurations.medium)}
           style={styles.iconContainer}
         >
-          <Text style={styles.iconEmoji}>📷</Text>
+          <View style={styles.iconCircle}>
+            <SPIcon name="camera" size={44} color={Colors.olive} strokeWidth={2} />
+          </View>
         </Animated.View>
 
         {/* Title */}
@@ -184,9 +183,12 @@ export default function CaptureLimitScreen() {
             accessibilityLabel={`Watch an ad to unlock ${BONUS_PER_AD} more captures`}
             accessibilityState={{ disabled: loadingAd }}
           >
-            <Text style={styles.watchAdText}>
-              {loadingAd ? 'Loading Ad…' : `▶  Watch Ad for ${BONUS_PER_AD} More Captures`}
-            </Text>
+            <View style={styles.watchAdRow}>
+              <SPIcon name="sparkles" size={18} color="#FFFFFF" strokeWidth={2.4} />
+              <Text style={styles.watchAdText}>
+                {loadingAd ? 'Loading Ad…' : `Watch Ad for ${BONUS_PER_AD} More Captures`}
+              </Text>
+            </View>
           </Pressable>
         </Animated.View>
 
@@ -195,10 +197,10 @@ export default function CaptureLimitScreen() {
           <Text style={[styles.howTitle, { color: isDark ? '#FFFFFF' : Colors.textPrimary }]}>
             How it works
           </Text>
-          <InfoRow emoji="🕐" text="Take up to 10 free photos every 6 hours" isDark={isDark} />
-          <InfoRow emoji="📺" text="Watch an ad to unlock 5 bonus captures" isDark={isDark} />
-          <InfoRow emoji="⏳" text="Counter resets automatically after 6 hours" isDark={isDark} />
-          <InfoRow emoji="❤️" text="Snap Pose is always free — no subscriptions" isDark={isDark} />
+          <InfoRow iconName="timer" text="Take up to 10 free photos every 6 hours" isDark={isDark} />
+          <InfoRow iconName="sparkles" text="Watch an ad to unlock 5 bonus captures" isDark={isDark} />
+          <InfoRow iconName="refresh" text="Counter resets automatically after 6 hours" isDark={isDark} />
+          <InfoRow iconName="heart-filled" iconColor={Colors.error} text="Snap Pose is always free — no subscriptions" isDark={isDark} />
         </Animated.View>
       </ScrollView>
     </View>
@@ -237,20 +239,22 @@ function StatRow({
   );
 }
 
-function InfoRow({ emoji, text, isDark }: { emoji: string; text: string; isDark: boolean }) {
+function InfoRow({ iconName, iconColor, text, isDark }: { iconName: string; iconColor?: string; text: string; isDark: boolean }) {
   return (
     <View style={styles.infoRow}>
-      <Text style={styles.infoEmoji}>{emoji}</Text>
+      <SPIcon
+        name={iconName}
+        size={18}
+        color={iconColor ?? Colors.olive}
+        fill={iconName === 'heart-filled' ? Colors.error : undefined}
+        strokeWidth={2}
+      />
       <Text style={[styles.infoText, { color: isDark ? '#CCCCCC' : Colors.textSecondary }]}>
         {text}
       </Text>
     </View>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
@@ -263,12 +267,24 @@ const styles = StyleSheet.create({
     minHeight: 48,
     justifyContent: 'center',
   },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   backText: {
     fontSize: Typography.sizes.body,
     fontWeight: Typography.weights.semibold as '600',
   },
   iconContainer: { alignItems: 'center' },
-  iconEmoji: { fontSize: 64 },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(101, 116, 74, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   title: {
     fontSize: Typography.sizes.h3,
     fontWeight: Typography.weights.bold as '700',
@@ -330,6 +346,11 @@ const styles = StyleSheet.create({
     minHeight: 52,
     justifyContent: 'center',
   },
+  watchAdRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   watchAdText: {
     color: '#FFFFFF',
     fontSize: Typography.sizes.body,
@@ -342,10 +363,9 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: Spacing.sm,
     marginBottom: Spacing.sm,
   },
-  infoEmoji: { fontSize: 18, lineHeight: 24 },
   infoText: { flex: 1, fontSize: Typography.sizes.small, lineHeight: 22 },
 });

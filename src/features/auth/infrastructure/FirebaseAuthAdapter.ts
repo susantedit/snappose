@@ -1,10 +1,11 @@
 /**
  * Firebase Authentication implementation of AuthAdapter.
  * Uses @react-native-firebase/auth with Expo SecureStore for token caching.
+ * Safely falls back to local guest user when native Firebase is unavailable.
  * [Req 3, 26, 47.5]
  */
 
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { NativeModules, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { AuthAdapter } from '../domain/interfaces/AuthAdapter';
 import type { AppUser, AuthProvider } from '../types';
@@ -12,7 +13,37 @@ import type { AppUser, AuthProvider } from '../types';
 const SECURE_STORE_TOKEN_KEY = 'sp_firebase_id_token';
 const SECURE_STORE_UID_KEY = 'sp_firebase_uid';
 
-function mapFirebaseUser(user: FirebaseAuthTypes.User | null): AppUser | null {
+function isNativeFirebaseAvailable(): boolean {
+  if (Platform.OS === 'web') return false;
+  return Boolean(
+    NativeModules &&
+    (NativeModules.RNFBAppModule || NativeModules.RNFBAuthModule)
+  );
+}
+
+let authModuleInstance: any = undefined;
+
+function getAuth() {
+  if (authModuleInstance !== undefined) {
+    return authModuleInstance;
+  }
+
+  if (!isNativeFirebaseAvailable()) {
+    authModuleInstance = null;
+    return null;
+  }
+
+  try {
+    const m = require('@react-native-firebase/auth');
+    const fn = m?.default || m;
+    authModuleInstance = typeof fn === 'function' ? fn : null;
+  } catch {
+    authModuleInstance = null;
+  }
+  return authModuleInstance;
+}
+
+function mapFirebaseUser(user: any): AppUser | null {
   if (!user) return null;
 
   let provider: AuthProvider = 'anonymous';
@@ -27,16 +58,24 @@ function mapFirebaseUser(user: FirebaseAuthTypes.User | null): AppUser | null {
 
   return {
     uid: user.uid,
-    displayName: user.displayName,
-    email: user.email,
-    photoURL: user.photoURL,
+    displayName: user.displayName || 'POSEHANUM User',
+    email: user.email || null,
+    photoURL: user.photoURL || null,
     provider,
-    isAnonymous: user.isAnonymous,
+    isAnonymous: user.isAnonymous ?? true,
   };
 }
 
 export class FirebaseAuthAdapter implements AuthAdapter {
   private static instance: FirebaseAuthAdapter;
+  private localUser: AppUser | null = {
+    uid: 'guest_user_snappose',
+    displayName: 'Guest Photographer',
+    email: null,
+    photoURL: null,
+    provider: 'anonymous',
+    isAnonymous: true,
+  };
 
   private constructor() {}
 
@@ -48,26 +87,31 @@ export class FirebaseAuthAdapter implements AuthAdapter {
   }
 
   async signInAnonymously(): Promise<AppUser> {
+    const authFn = getAuth();
+    if (!authFn) {
+      return this.localUser!;
+    }
     try {
-      const userCredential = await auth().signInAnonymously();
+      const userCredential = await authFn().signInAnonymously();
       const token = await userCredential.user.getIdToken();
       await this.saveTokens(userCredential.user.uid, token);
       const appUser = mapFirebaseUser(userCredential.user);
       if (!appUser) throw new Error('Failed to map user after anonymous sign-in');
+      this.localUser = appUser;
       return appUser;
     } catch (error) {
-      console.warn('[FirebaseAuthAdapter] signInAnonymously error:', error);
-      throw error;
+      console.warn('[FirebaseAuthAdapter] signInAnonymously fallback to local:', error);
+      return this.localUser!;
     }
   }
 
   async signInWithGoogle(): Promise<AppUser> {
+    const authFn = getAuth();
+    if (!authFn) {
+      return this.localUser!;
+    }
     try {
-      // In production with Google Sign-In native module:
-      // const { idToken } = await GoogleSignin.signIn();
-      // const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-      // const userCredential = await auth().signInWithCredential(googleCredential);
-      const currentUser = auth().currentUser;
+      const currentUser = authFn().currentUser;
       if (!currentUser) {
         throw new Error('Google Sign-In requires active Google authentication flow');
       }
@@ -75,6 +119,7 @@ export class FirebaseAuthAdapter implements AuthAdapter {
       await this.saveTokens(currentUser.uid, token);
       const appUser = mapFirebaseUser(currentUser);
       if (!appUser) throw new Error('Failed to map user after Google sign-in');
+      this.localUser = appUser;
       return appUser;
     } catch (error) {
       console.warn('[FirebaseAuthAdapter] signInWithGoogle error:', error);
@@ -83,12 +128,17 @@ export class FirebaseAuthAdapter implements AuthAdapter {
   }
 
   async signInWithEmail(email: string, password: string): Promise<AppUser> {
+    const authFn = getAuth();
+    if (!authFn) {
+      return this.localUser!;
+    }
     try {
-      const userCredential = await auth().signInWithEmailAndPassword(email, password);
+      const userCredential = await authFn().signInWithEmailAndPassword(email, password);
       const token = await userCredential.user.getIdToken();
       await this.saveTokens(userCredential.user.uid, token);
       const appUser = mapFirebaseUser(userCredential.user);
       if (!appUser) throw new Error('Failed to map user after email sign-in');
+      this.localUser = appUser;
       return appUser;
     } catch (error) {
       console.warn('[FirebaseAuthAdapter] signInWithEmail error:', error);
@@ -97,41 +147,59 @@ export class FirebaseAuthAdapter implements AuthAdapter {
   }
 
   async signOut(): Promise<void> {
-    try {
-      await auth().signOut();
-      await this.clearTokens();
-    } catch (error) {
-      console.warn('[FirebaseAuthAdapter] signOut error:', error);
-      throw error;
+    const authFn = getAuth();
+    if (authFn) {
+      try {
+        await authFn().signOut();
+      } catch {}
     }
+    await this.clearTokens();
+    this.localUser = null;
   }
 
   getCurrentUser(): AppUser | null {
-    return mapFirebaseUser(auth().currentUser);
+    const authFn = getAuth();
+    if (!authFn) {
+      return this.localUser;
+    }
+    try {
+      return mapFirebaseUser(authFn().currentUser) ?? this.localUser;
+    } catch {
+      return this.localUser;
+    }
   }
 
   async getIdToken(): Promise<string> {
-    const currentUser = auth().currentUser;
-    if (currentUser) {
+    const authFn = getAuth();
+    if (authFn) {
       try {
-        const token = await currentUser.getIdToken(false);
-        await this.saveTokens(currentUser.uid, token);
-        return token;
-      } catch {
-        // Fallback to secure store cached token if network/refresh fails
-        const cached = await SecureStore.getItemAsync(SECURE_STORE_TOKEN_KEY);
-        if (cached) return cached;
-      }
+        const currentUser = authFn().currentUser;
+        if (currentUser) {
+          const token = await currentUser.getIdToken(false);
+          await this.saveTokens(currentUser.uid, token);
+          return token;
+        }
+      } catch {}
     }
     const cachedToken = await SecureStore.getItemAsync(SECURE_STORE_TOKEN_KEY);
-    return cachedToken || '';
+    return cachedToken || 'guest_token';
   }
 
   onAuthStateChanged(callback: (user: AppUser | null) => void): () => void {
-    return auth().onAuthStateChanged((user) => {
-      const appUser = mapFirebaseUser(user);
-      callback(appUser);
-    });
+    const authFn = getAuth();
+    if (!authFn) {
+      callback(this.localUser);
+      return () => {};
+    }
+    try {
+      return authFn().onAuthStateChanged((user: any) => {
+        const appUser = mapFirebaseUser(user);
+        callback(appUser);
+      });
+    } catch {
+      callback(this.localUser);
+      return () => {};
+    }
   }
 
   private async saveTokens(uid: string, token: string): Promise<void> {

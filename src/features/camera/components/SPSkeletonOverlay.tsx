@@ -24,7 +24,6 @@ import { Colors, BorderRadius, Spacing, Typography } from '@/constants/designTok
 // ---------------------------------------------------------------------------
 
 const SEGMENT_STROKE_WIDTH = 3;
-const COLOUR_TRANSITION_MS = 200;
 const CHIP_DISMISS_DELAY_MS = 2000;
 
 // ---------------------------------------------------------------------------

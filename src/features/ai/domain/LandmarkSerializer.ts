@@ -22,8 +22,9 @@ import type { PoseLandmarks, Landmark } from '../types';
  * Fields are always output in fixed order: x, y, z, visibility.
  * Numbers are rounded to 8 significant decimal places to prevent fp noise.
  */
-export function serializeLandmarks(landmarks: PoseLandmarks): string {
-  const arr = Array.from(landmarks).map(serializeLandmark);
+export function serializeLandmarks(landmarks: PoseLandmarks | { landmarks: PoseLandmarks }): string {
+  const lms = Array.isArray(landmarks) ? landmarks : landmarks.landmarks;
+  const arr = Array.from(lms || []).map(serializeLandmark);
   return JSON.stringify(arr);
 }
 

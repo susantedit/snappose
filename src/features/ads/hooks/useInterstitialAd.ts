@@ -44,9 +44,9 @@ export function useInterstitialAd() {
    * Reads the current frequency state from MMKV.
    */
   const readState = useCallback((): InterstitialFrequencyState => {
-    const raw = mmkv.getString(MMKV_KEYS.LAST_INTERSTITIAL_TIME);
+    const raw = mmkv.getString(MMKV_KEYS.LAST_INTERSTITIAL_TIMESTAMP);
     const lastShownAt = raw !== undefined ? Number(raw) : null;
-    const showCount = mmkv.getNumber(MMKV_KEYS.LAST_INTERSTITIAL_TIME + '_count') ?? 0;
+    const showCount = mmkv.getNumber(MMKV_KEYS.LAST_INTERSTITIAL_TIMESTAMP + '_count') ?? 0;
     return { lastShownAt: lastShownAt !== null && !isNaN(lastShownAt) ? lastShownAt : null, showCount };
   }, []);
 
@@ -55,9 +55,9 @@ export function useInterstitialAd() {
    */
   const writeState = useCallback((state: InterstitialFrequencyState) => {
     if (state.lastShownAt !== null) {
-      mmkv.set(MMKV_KEYS.LAST_INTERSTITIAL_TIME, String(state.lastShownAt));
+      mmkv.set(MMKV_KEYS.LAST_INTERSTITIAL_TIMESTAMP, String(state.lastShownAt));
     }
-    mmkv.set(MMKV_KEYS.LAST_INTERSTITIAL_TIME + '_count', state.showCount);
+    mmkv.set(MMKV_KEYS.LAST_INTERSTITIAL_TIMESTAMP + '_count', state.showCount);
   }, []);
 
   /**

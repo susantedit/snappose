@@ -133,35 +133,38 @@ export function analyseFace(normalisedLandmarks: NormalisedLandmarks): FaceAnaly
 function _computeSmileProbability(lms: NormalisedLandmarks['landmarks']): number {
   const mouthLeft = lms[LM.MOUTH_LEFT];
   const mouthRight = lms[LM.MOUTH_RIGHT];
+  const nose = lms[LM.NOSE];
+  const leftEye = lms[LM.LEFT_EYE];
+  const rightEye = lms[LM.RIGHT_EYE];
 
   if (!_isVisible(mouthLeft) || !_isVisible(mouthRight)) {
     return 0;
   }
 
-  // Mouth midpoint y (in normalised coords, smaller y = higher on screen)
-  const midY = (mouthLeft.y + mouthRight.y) / 2;
-
   // Mouth width for normalisation
   const mouthWidth = Math.abs(mouthRight.x - mouthLeft.x);
   if (mouthWidth < 1e-6) return 0;
 
-  // Rise: how much each corner is above the midpoint (negative y = higher up)
-  const leftRise = midY - mouthLeft.y;
-  const rightRise = midY - mouthRight.y;
+  // Mouth midpoint y
+  const mouthMidY = (mouthLeft.y + mouthRight.y) / 2;
 
-  // Both corners must rise for a smile
-  const minRise = Math.min(leftRise, rightRise);
+  let rise = 0;
+  if (_isVisible(nose) && _isVisible(leftEye) && _isVisible(rightEye)) {
+    const eyeMidY = (leftEye.y + rightEye.y) / 2;
+    const noseToEye = Math.max(0.01, nose.y - eyeMidY);
+    // Neutral mouth is roughly 2.5 * noseToEye below nose
+    const neutralMouthY = nose.y + noseToEye * 2.5;
+    rise = (neutralMouthY - mouthMidY) / mouthWidth;
+  } else if (_isVisible(nose)) {
+    const neutralMouthY = nose.y + 0.06;
+    rise = (neutralMouthY - mouthMidY) / mouthWidth;
+  }
 
-  // Normalise rise by mouth width
-  const normalisedRise = minRise / mouthWidth;
-
-  if (normalisedRise < SMILE_CORNER_RISE_THRESHOLD) {
+  if (rise <= SMILE_CORNER_RISE_THRESHOLD) {
     return 0;
   }
 
-  // Map normalised rise to [0, 1]:
-  // 0.05 → ~0.0, 0.5 → ~1.0 (generous upper bound for a wide smile)
-  const probability = Math.min(1, (normalisedRise - SMILE_CORNER_RISE_THRESHOLD) / 0.45);
+  const probability = Math.min(1, (rise - SMILE_CORNER_RISE_THRESHOLD) / 0.45);
   return Math.max(0, probability);
 }
 

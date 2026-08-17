@@ -52,7 +52,7 @@ function generatePhotoId(): string {
   return `photo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-import { AnalyticsService } from '@/services/analytics/AnalyticsService';
+import AnalyticsService from '@/services/analytics/AnalyticsService';
 
 function emitPhotoCaptureEvent(params: {
   poseId: string | null;

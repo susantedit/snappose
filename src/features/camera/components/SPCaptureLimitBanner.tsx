@@ -3,7 +3,7 @@
  *
  * Shown when captureCount ≥ 8 (PRELOAD_AD_THRESHOLD).
  * Displays remaining captures and a compact progress bar.
- *
+ * All icons rendered via crisp SVG SPIcon components.
  * [Req 28 — new capture limit UI]
  */
 
@@ -11,8 +11,8 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/designTokens';
+import { SPIcon } from '@/components/atoms/SPIcon';
 import {
-  BASE_CAPTURE_LIMIT,
   type RateLimitCheck,
 } from '../domain/CaptureRateLimit';
 
@@ -53,9 +53,12 @@ export function SPCaptureLimitBanner({
         accessibilityHint="Opens the capture limit screen"
       >
         {/* Label */}
-        <Text style={styles.label}>
-          {remaining === 0 ? '📷 Limit reached' : `📷 ${remaining} left`}
-        </Text>
+        <View style={styles.labelRow}>
+          <SPIcon name="camera" size={14} color="#FFFFFF" strokeWidth={2} />
+          <Text style={styles.label}>
+            {remaining === 0 ? 'Limit reached' : `${remaining} left`}
+          </Text>
+        </View>
 
         {/* Progress bar */}
         <View style={styles.barTrack}>
@@ -92,6 +95,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: 6,
     gap: 4,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   label: {
     color: '#FFFFFF',

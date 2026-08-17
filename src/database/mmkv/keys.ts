@@ -40,6 +40,22 @@ export const MMKV_KEYS = {
   LAST_INTERSTITIAL_TIMESTAMP: 'lastInterstitialTimestamp',
   /** ISO date string (YYYY-MM-DD) of the last app-open ad shown */
   APP_OPEN_AD_LAST_DATE: 'appOpenAdLastDate',
+  /** Favorites array */
+  FAVORITES: 'favorites',
+  /** Recent searches history */
+  RECENT_SEARCHES: 'recentSearches',
+  /** Captured photos metadata */
+  CAPTURED_PHOTOS: 'capturedPhotos',
+  /** Downloaded pose packs */
+  DOWNLOADS: 'downloads',
+  /** Serialized UserPreferenceProfile JSON */
+  USER_PREFERENCE_PROFILE: 'userPreferenceProfile',
+  /** Personalization toggle boolean */
+  PERSONALIZATION_ENABLED: 'personalizationEnabled',
+  /** Serialized array of explicit feedback items */
+  EXPLICIT_FEEDBACK: 'explicitFeedback',
+  /** User preferred outfit category string */
+  OUTFIT_PREFERENCE: 'outfitPreference',
 } as const;
 
 export type MMKVKey = (typeof MMKV_KEYS)[keyof typeof MMKV_KEYS];

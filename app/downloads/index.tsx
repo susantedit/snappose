@@ -9,8 +9,10 @@ import {
   Alert,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/constants/theme';
 import { Spacing, Typography, BorderRadius, Colors } from '@/constants/designTokens';
+import { SPIcon } from '@/components/atoms/SPIcon';
 import { DownloadManager } from '@/features/downloads/domain/DownloadManager';
 import type { Download } from '@/features/downloads/types';
 
@@ -26,6 +28,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function DownloadsScreen() {
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -110,7 +113,7 @@ export default function DownloadsScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background, paddingTop: insets.top + Spacing.xs }]}>
       {/* Header */}
       <View style={styles.header}>
         <Pressable
@@ -119,7 +122,10 @@ export default function DownloadsScreen() {
           accessibilityLabel="Go back"
           onPress={() => router.back()}
         >
-          <Text style={[styles.backLinkText, { color: theme.colors.olive }]}>← Back</Text>
+          <View style={styles.backRow}>
+            <SPIcon name="arrowLeft" size={18} color={theme.colors.olive} strokeWidth={2.4} />
+            <Text style={[styles.backLinkText, { color: theme.colors.olive }]}>Back</Text>
+          </View>
         </Pressable>
         <View style={styles.titleRow}>
           <Text style={[styles.screenTitle, { color: theme.colors.textPrimary }]} accessibilityRole="header">
@@ -136,7 +142,9 @@ export default function DownloadsScreen() {
       {/* Content */}
       {downloads.length === 0 ? (
         <View style={styles.centred}>
-          <Text style={styles.emptyIcon}>📦</Text>
+          <View style={styles.emptyIconCircle}>
+            <SPIcon name="download" size={44} color={Colors.olive} strokeWidth={2} />
+          </View>
           <Text style={[styles.errorTitle, { color: theme.colors.textPrimary }]}>
             No downloaded packs
           </Text>
@@ -164,7 +172,7 @@ export default function DownloadsScreen() {
                   Pose Pack #{item.poseId}
                 </Text>
                 <Text style={[styles.packMeta, { color: theme.colors.textSecondary }]}>
-                  Size: {formatBytes(item.storageSize)} • Downloaded: {new Date(item.downloadedAt).toLocaleDateString()}
+                  Size: {formatBytes(item.storageSize)} • Downloaded: {item.downloadedAt ? new Date(item.downloadedAt).toLocaleDateString() : 'Recently'}
                 </Text>
               </View>
               <Pressable
@@ -173,7 +181,7 @@ export default function DownloadsScreen() {
                 accessibilityLabel="Delete downloaded pack"
                 onPress={() => handleDelete(item.poseId)}
               >
-                <Text style={styles.deleteButtonText}>Delete</Text>
+                <SPIcon name="trash" size={16} color={Colors.error} strokeWidth={2} />
               </Pressable>
             </View>
           )}
@@ -187,74 +195,78 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  header: {
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(128,128,128,0.2)',
+  },
+  backLink: {
+    marginBottom: Spacing.xs,
+  },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  backLinkText: {
+    fontSize: Typography.sizes.body,
+    fontWeight: Typography.weights.semibold as '600',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  screenTitle: {
+    fontSize: Typography.sizes.h2,
+    fontWeight: Typography.weights.bold as '700',
+  },
+  storageBadge: {
+    fontSize: Typography.sizes.small,
+    fontWeight: Typography.weights.medium as '500',
+  },
   centred: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: Spacing.xl,
   },
-  header: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.sm,
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(101, 116, 74, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    marginTop: Spacing.xs,
-  },
-  screenTitle: {
-    fontSize: Typography.sizes.h2,
-    fontWeight: Typography.weights.bold,
-  },
-  storageBadge: {
-    fontSize: Typography.sizes.small,
-    fontWeight: Typography.weights.medium,
-  },
-  emptyIcon: {
-    fontSize: 56,
-    marginBottom: Spacing.sm,
+  errorTitle: {
+    fontSize: Typography.sizes.h3,
+    fontWeight: Typography.weights.semibold as '600',
+    textAlign: 'center',
+    marginBottom: Spacing.xs,
   },
   stateText: {
     fontSize: Typography.sizes.body,
     textAlign: 'center',
-    marginTop: Spacing.xs,
     lineHeight: 22,
-    maxWidth: 300,
-  },
-  errorTitle: {
-    fontSize: Typography.sizes.h3,
-    fontWeight: Typography.weights.semibold,
-    textAlign: 'center',
-    marginBottom: Spacing.xs,
+    marginBottom: Spacing.lg,
   },
   button: {
-    marginTop: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.xl,
     borderRadius: BorderRadius.button,
-    minHeight: 48,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   buttonText: {
-    color: Colors.textInverse,
+    color: '#FFFFFF',
     fontSize: Typography.sizes.body,
-    fontWeight: Typography.weights.semibold,
-  },
-  backLink: {
-    paddingVertical: Spacing.xs,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  backLinkText: {
-    fontSize: Typography.sizes.body,
-    fontWeight: Typography.weights.medium,
+    fontWeight: Typography.weights.semibold as '600',
   },
   listContent: {
-    padding: Spacing.lg,
-    gap: Spacing.md,
+    padding: Spacing.md,
+    gap: Spacing.sm,
   },
   packCard: {
     flexDirection: 'row',
@@ -266,31 +278,21 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 1,
+    elevation: 2,
   },
   packInfo: {
     flex: 1,
-    gap: 4,
+    marginRight: Spacing.sm,
   },
   packTitle: {
     fontSize: Typography.sizes.body,
-    fontWeight: Typography.weights.semibold,
+    fontWeight: Typography.weights.semibold as '600',
+    marginBottom: 2,
   },
   packMeta: {
-    fontSize: Typography.sizes.caption,
+    fontSize: Typography.sizes.small,
   },
   deleteButton: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    minHeight: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteButtonText: {
-    color: '#EF4444',
-    fontSize: Typography.sizes.small,
-    fontWeight: Typography.weights.medium,
+    padding: Spacing.xs,
   },
 });

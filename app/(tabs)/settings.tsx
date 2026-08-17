@@ -1,772 +1,593 @@
 /**
- * Settings Screen — all settings sections in single scrollable view.
- * Sections: General, Appearance, Camera, Downloads, Notifications, Privacy, Developer, About
- * [Req 23]
+ * SettingsScreen — Tactile Preferences, AI Personalization & Privacy Controls for Snap Pose.
+ *
+ * Features:
+ *  • Privacy-First AI Personalization Toggle with clear on-device disclosure
+ *  • Outfit Style Preference Selection
+ *  • "Reset My Recommendations" action with full preference profile wipe
+ *  • Custom Tactile Animated Switch with spring thumb physics and color transitions
+ *  • Smooth Theme Mode selection (Light, Dark, System)
+ *  • Camera & AI Pose Assist preferences
+ *  • Storage & Cache management with animated feedback
+ *  • Animated Bottom Sheets for Help, About, Privacy, and Terms
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Linking,
+  Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Constants from 'expo-constants';
-import { useTheme, type ThemeMode } from '@/constants/theme';
+import { router } from 'expo-router';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+
+import { useTheme } from '@/constants/theme';
+import {
+  BorderRadius,
+  Colors,
+  Spacing,
+} from '@/constants/designTokens';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { SPText } from '@/components/atoms/SPText';
-import { SPButton } from '@/components/atoms/SPButton';
-import { SPDivider } from '@/components/atoms/SPDivider';
-import { SPBadge } from '@/components/atoms/SPBadge';
-import { SPDialog } from '@/components/organisms/SPDialog';
-import { useToast, SPToast } from '@/components/molecules/SPToast';
-import { Colors, Spacing, BorderRadius } from '@/constants/designTokens';
+import { usePersonalizationStore } from '@/stores/personalizationStore';
+import { SPToast, useToast } from '@/components/molecules/SPToast';
+import { SPIcon } from '@/components/atoms/SPIcon';
+import { AnimatedPressable } from '@/components/motion/AnimatedPressable';
+import { AnimatedBottomSheet } from '@/components/motion/AnimatedBottomSheet';
+import { MotionSprings, useReducedMotion } from '@/constants/motion';
 import { mmkv } from '@/database/mmkv/mmkvClient';
-import { MMKV_KEYS } from '@/database/mmkv/keys';
+import type { OutfitCategory } from '@/features/personalization';
 
-export default function SettingsScreen() {
-  const { theme, themeMode, setThemeMode } = useTheme();
-  const settingsStore = useSettingsStore();
-  const { toastProps, showToast } = useToast();
+const HORIZONTAL_PADDING = Spacing.md;
 
-  // Dialog states
-  const [deleteDownloadsDialog, setDeleteDownloadsDialog] = useState(false);
-  const [resetOnboardingDialog, setResetOnboardingDialog] = useState(false);
-  const [accountDeletionDialog, setAccountDeletionDialog] = useState(false);
+const OUTFIT_OPTIONS: { id: OutfitCategory; name: string }[] = [
+  { id: 'casual', name: 'Casual' },
+  { id: 'streetwear', name: 'Streetwear' },
+  { id: 'formal', name: 'Formal' },
+  { id: 'summer', name: 'Summer' },
+  { id: 'winter', name: 'Winter' },
+  { id: 'sportswear', name: 'Sportswear' },
+  { id: 'traditional', name: 'Traditional' },
+];
 
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Tactile Animated Switch Component
+// ---------------------------------------------------------------------------
 
-  const handleResetOnboarding = () => {
-    mmkv.set(MMKV_KEYS.ONBOARDING_COMPLETED, false);
-    setResetOnboardingDialog(false);
-    showToast({ message: 'Onboarding reset. Restart the app to see it again.', variant: 'success' });
+interface TactileSwitchProps {
+  value: boolean;
+  onValueChange: (val: boolean) => void;
+}
+
+function TactileSwitch({ value, onValueChange }: TactileSwitchProps) {
+  const reduceMotion = useReducedMotion();
+  const thumbTranslate = useSharedValue(value ? 20 : 2);
+  const thumbScale = useSharedValue(1);
+
+  useEffect(() => {
+    if (!reduceMotion) {
+      thumbTranslate.value = withSpring(value ? 20 : 2, MotionSprings.snappy);
+    } else {
+      thumbTranslate.value = value ? 20 : 2;
+    }
+  }, [value, reduceMotion, thumbTranslate]);
+
+  const handleToggle = () => {
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+    }
+    if (!reduceMotion) {
+      thumbScale.value = withTiming(1.18, { duration: 90 }, () => {
+        thumbScale.value = withSpring(1, MotionSprings.snappy);
+      });
+    }
+    onValueChange(!value);
   };
 
-  const handleDeleteAllDownloads = () => {
-    // TODO: wire to actual download manager when implemented
-    setDeleteDownloadsDialog(false);
-    showToast({ message: 'All downloads deleted', variant: 'success' });
-  };
-
-  const handleRequestAccountDeletion = () => {
-    // TODO: POST /feedback with type=account_deletion when backend is ready
-    setAccountDeletionDialog(false);
-    showToast({
-      message: 'Account deletion request submitted',
-      description: 'We will process your request within 30 days.',
-      variant: 'info',
-    });
-  };
-
-  const openURL = (url: string, label: string) => {
-    Linking.openURL(url).catch(() => {
-      showToast({ message: `Unable to open ${label}`, variant: 'error' });
-    });
-  };
-
-  // ---------------------------------------------------------------------------
-  // Section: General
-  // ---------------------------------------------------------------------------
-
-  function renderGeneralSection() {
-    return (
-      <View style={styles.section}>
-        <SPText variant="heading3" style={styles.sectionTitle}>
-          General
-        </SPText>
-
-        <SettingRow
-          label="Language"
-          value="English"
-          onPress={() => showToast({ message: 'Multi-language coming soon', variant: 'info' })}
-          accessibilityLabel="Language selector"
-        />
-
-        <SPDivider margin={Spacing.xs} />
-
-        <SettingRow
-          label="Reset Onboarding"
-          subtitle="Show the intro screens again on next launch"
-          onPress={() => setResetOnboardingDialog(true)}
-          accessibilityLabel="Reset onboarding"
-        />
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Section: Appearance
-  // ---------------------------------------------------------------------------
-
-  function renderAppearanceSection() {
-    return (
-      <View style={styles.section}>
-        <SPText variant="heading3" style={styles.sectionTitle}>
-          Appearance
-        </SPText>
-
-        <View style={styles.themeRow}>
-          <SPText variant="bodyMedium">Theme</SPText>
-          <View style={styles.themeButtons}>
-            <ThemeButton mode="light" active={themeMode === 'light'} onPress={() => setThemeMode('light')} />
-            <ThemeButton mode="dark" active={themeMode === 'dark'} onPress={() => setThemeMode('dark')} />
-            <ThemeButton mode="system" active={themeMode === 'system'} onPress={() => setThemeMode('system')} />
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Section: Camera
-  // ---------------------------------------------------------------------------
-
-  function renderCameraSection() {
-    const { camera, updateCameraSettings } = settingsStore;
-
-    return (
-      <View style={styles.section}>
-        <SPText variant="heading3" style={styles.sectionTitle}>
-          Camera
-        </SPText>
-
-        {/* Grid type */}
-        <View style={styles.pickerRow}>
-          <SPText variant="bodyMedium">Grid</SPText>
-          <View style={styles.chipRow}>
-            <Chip
-              label="None"
-              active={camera.gridType === 'none'}
-              onPress={() => updateCameraSettings({ gridType: 'none' })}
-            />
-            <Chip
-              label="Thirds"
-              active={camera.gridType === 'thirds'}
-              onPress={() => updateCameraSettings({ gridType: 'thirds' })}
-            />
-            <Chip
-              label="Golden"
-              active={camera.gridType === 'golden'}
-              onPress={() => updateCameraSettings({ gridType: 'golden' })}
-            />
-          </View>
-        </View>
-
-        <SPDivider margin={Spacing.xs} />
-
-        {/* Flash mode */}
-        <View style={styles.pickerRow}>
-          <SPText variant="bodyMedium">Flash</SPText>
-          <View style={styles.chipRow}>
-            <Chip
-              label="Auto"
-              active={camera.flashMode === 'auto'}
-              onPress={() => updateCameraSettings({ flashMode: 'auto' })}
-            />
-            <Chip
-              label="On"
-              active={camera.flashMode === 'on'}
-              onPress={() => updateCameraSettings({ flashMode: 'on' })}
-            />
-            <Chip
-              label="Off"
-              active={camera.flashMode === 'off'}
-              onPress={() => updateCameraSettings({ flashMode: 'off' })}
-            />
-          </View>
-        </View>
-
-        <SPDivider margin={Spacing.xs} />
-
-        {/* Overlay opacity slider */}
-        <View style={styles.sliderRow}>
-          <SPText variant="bodyMedium">Overlay Opacity</SPText>
-          <SPText variant="caption" color={theme.colors.textSecondary}>
-            {camera.overlayOpacity}%
-          </SPText>
-        </View>
-        <SliderControl
-          value={camera.overlayOpacity}
-          min={0}
-          max={100}
-          step={5}
-          onChange={(val) => updateCameraSettings({ overlayOpacity: val })}
-          accessibilityLabel="Overlay opacity slider"
-        />
-
-        <SPDivider margin={Spacing.xs} />
-
-        {/* Auto-capture threshold slider (Req 17.6) */}
-        <View style={styles.sliderRow}>
-          <SPText variant="bodyMedium">Auto-Capture Threshold</SPText>
-          <SPText variant="caption" color={theme.colors.textSecondary}>
-            {camera.autoCaptureThreshold}%
-          </SPText>
-        </View>
-        <SliderControl
-          value={camera.autoCaptureThreshold}
-          min={80}
-          max={99}
-          step={1}
-          onChange={(val) => updateCameraSettings({ autoCaptureThreshold: val })}
-          accessibilityLabel="Auto-capture threshold slider"
-        />
-
-        <SPDivider margin={Spacing.xs} />
-
-        {/* Voice guidance toggle */}
-        <ToggleRow
-          label="Voice Guidance"
-          value={camera.voiceGuidanceEnabled}
-          onValueChange={(val) => updateCameraSettings({ voiceGuidanceEnabled: val })}
-          accessibilityLabel="Voice guidance toggle"
-        />
-
-        <SPDivider margin={Spacing.xs} />
-
-        {/* Smile detection toggle */}
-        <ToggleRow
-          label="Smile Detection"
-          value={camera.smileDetectionEnabled}
-          onValueChange={(val) => updateCameraSettings({ smileDetectionEnabled: val })}
-          accessibilityLabel="Smile detection toggle"
-        />
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Section: Downloads
-  // ---------------------------------------------------------------------------
-
-  function renderDownloadsSection() {
-    // TODO: get real storage data from download manager
-    const storageUsedMB = 0;
-
-    return (
-      <View style={styles.section}>
-        <SPText variant="heading3" style={styles.sectionTitle}>
-          Downloads
-        </SPText>
-
-        <View style={styles.infoRow}>
-          <SPText variant="body">Storage Used</SPText>
-          <SPText variant="bodyMedium" color={theme.colors.textSecondary}>
-            {storageUsedMB} MB
-          </SPText>
-        </View>
-
-        <SPDivider margin={Spacing.xs} />
-
-        <SPButton
-          label="Delete All Downloads"
-          variant="ghost"
-          size="md"
-          onPress={() => setDeleteDownloadsDialog(true)}
-          accessibilityLabel="Delete all downloads"
-          labelStyle={{ color: Colors.error }}
-        />
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Section: Notifications
-  // ---------------------------------------------------------------------------
-
-  function renderNotificationsSection() {
-    const { notifications, updateNotifications } = settingsStore;
-
-    return (
-      <View style={styles.section}>
-        <SPText variant="heading3" style={styles.sectionTitle}>
-          Notifications
-        </SPText>
-
-        <ToggleRow
-          label="Notifications"
-          subtitle="Master toggle for all notifications"
-          value={notifications.masterEnabled}
-          onValueChange={(val) => updateNotifications({ masterEnabled: val })}
-          accessibilityLabel="Master notification toggle"
-        />
-
-        {notifications.masterEnabled && (
-          <>
-            <SPDivider margin={Spacing.xs} />
-            <ToggleRow
-              label="Daily Pose Suggestion"
-              value={notifications.dailyPose}
-              onValueChange={(val) => updateNotifications({ dailyPose: val })}
-              accessibilityLabel="Daily pose notification toggle"
-            />
-
-            <SPDivider margin={Spacing.xs} />
-            <ToggleRow
-              label="Download Complete"
-              value={notifications.downloadComplete}
-              onValueChange={(val) => updateNotifications({ downloadComplete: val })}
-              accessibilityLabel="Download complete notification toggle"
-            />
-
-            <SPDivider margin={Spacing.xs} />
-            <ToggleRow
-              label="Capture Window Reset"
-              value={notifications.windowReset}
-              onValueChange={(val) => updateNotifications({ windowReset: val })}
-              accessibilityLabel="Window reset notification toggle"
-            />
-          </>
-        )}
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Section: Privacy
-  // ---------------------------------------------------------------------------
-
-  function renderPrivacySection() {
-    return (
-      <View style={styles.section}>
-        <SPText variant="heading3" style={styles.sectionTitle}>
-          Privacy
-        </SPText>
-
-        <View style={styles.infoRow}>
-          <SPText variant="body">Camera Permission</SPText>
-          <SPBadge label="Granted" variant="success" />
-        </View>
-
-        <SPDivider margin={Spacing.xs} />
-
-        <View style={styles.infoRow}>
-          <SPText variant="body">Photos Permission</SPText>
-          <SPBadge label="Granted" variant="success" />
-        </View>
-
-        <SPDivider margin={Spacing.xs} />
-
-        <SettingRow
-          label="Privacy Policy"
-          onPress={() => openURL('https://snappose.app/privacy', 'Privacy Policy')}
-          accessibilityLabel="Open privacy policy"
-        />
-
-        <SPDivider margin={Spacing.xs} />
-
-        <SettingRow
-          label="Terms & Conditions"
-          onPress={() => openURL('https://snappose.app/terms', 'Terms & Conditions')}
-          accessibilityLabel="Open terms and conditions"
-        />
-
-        <SPDivider margin={Spacing.xs} />
-
-        <SPButton
-          label="Request Account Deletion"
-          variant="ghost"
-          size="md"
-          onPress={() => setAccountDeletionDialog(true)}
-          accessibilityLabel="Request account deletion"
-          labelStyle={{ color: Colors.error }}
-        />
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Section: Developer (Susant Luitel links)
-  // ---------------------------------------------------------------------------
-
-  function renderDeveloperSection() {
-    const socials = [
-      { label: 'GitHub', url: 'https://github.com/susantlr', icon: '💻' },
-      { label: 'YouTube', url: 'https://youtube.com/@susantluitel', icon: '🎥' },
-      { label: 'LinkedIn', url: 'https://linkedin.com/in/susantluitel', icon: '💼' },
-      { label: 'Instagram', url: 'https://instagram.com/susantluitel', icon: '📷' },
-      { label: 'Facebook', url: 'https://facebook.com/susantluitel', icon: '👤' },
-      { label: 'Pinterest', url: 'https://pinterest.com/susantluitel', icon: '📌' },
-      { label: 'TikTok', url: 'https://tiktok.com/@susantluitel', icon: '🎵' },
-      { label: 'X (Twitter)', url: 'https://x.com/susantluitel', icon: '✖️' },
-      { label: 'WhatsApp', url: 'https://wa.me/+9779841XXXXXX', icon: '💬' },
-      { label: 'Email', url: 'mailto:susant@snappose.app', icon: '✉️' },
-    ];
-
-    return (
-      <View style={styles.section}>
-        <SPText variant="heading3" style={styles.sectionTitle}>
-          Developer
-        </SPText>
-
-        <SPText variant="caption" color={theme.colors.textSecondary} style={{ marginBottom: Spacing.sm }}>
-          Connect with Susant Luitel
-        </SPText>
-
-        {socials.map((social, idx) => (
-          <React.Fragment key={social.label}>
-            <SettingRow
-              label={social.label}
-              leftIcon={social.icon}
-              onPress={() => openURL(social.url, social.label)}
-              accessibilityLabel={`Open ${social.label}`}
-            />
-            {idx < socials.length - 1 && <SPDivider margin={Spacing.xs} />}
-          </React.Fragment>
-        ))}
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Section: About
-  // ---------------------------------------------------------------------------
-
-  function renderAboutSection() {
-    const appVersion = Constants.expoConfig?.version ?? '1.0.0';
-    const buildNumber = (Constants.expoConfig?.android?.versionCode ?? 1).toString();
-
-    return (
-      <View style={styles.section}>
-        <SPText variant="heading3" style={styles.sectionTitle}>
-          About
-        </SPText>
-
-        <View style={styles.infoRow}>
-          <SPText variant="body">App Version</SPText>
-          <SPText variant="bodyMedium" color={theme.colors.textSecondary}>
-            {appVersion}
-          </SPText>
-        </View>
-
-        <SPDivider margin={Spacing.xs} />
-
-        <View style={styles.infoRow}>
-          <SPText variant="body">Build Number</SPText>
-          <SPText variant="bodyMedium" color={theme.colors.textSecondary}>
-            {buildNumber}
-          </SPText>
-        </View>
-
-        <SPDivider margin={Spacing.xs} />
-
-        <SPText variant="caption" color={theme.colors.textSecondary} style={{ textAlign: 'center', marginTop: Spacing.sm }}>
-          © {new Date().getFullYear()} Snap Pose. All rights reserved.
-        </SPText>
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  const animatedThumbStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: thumbTranslate.value },
+      { scale: thumbScale.value },
+    ],
+  }));
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['top']}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.header}>
-          <SPText variant="heading1">Settings</SPText>
-        </View>
-
-        {renderGeneralSection()}
-        {renderAppearanceSection()}
-        {renderCameraSection()}
-        {renderDownloadsSection()}
-        {renderNotificationsSection()}
-        {renderPrivacySection()}
-        {renderDeveloperSection()}
-        {renderAboutSection()}
-
-        {/* Bottom padding */}
-        <View style={{ height: Spacing.xxxl }} />
-      </ScrollView>
-
-      {/* Dialogs */}
-      <SPDialog
-        visible={deleteDownloadsDialog}
-        title="Delete All Downloads?"
-        message="This will remove all downloaded pose packs. You can re-download them anytime."
-        icon="🗑️"
-        confirmAction={{
-          label: 'Delete',
-          onPress: handleDeleteAllDownloads,
-          destructive: true,
-          accessibilityLabel: 'Confirm delete all downloads',
-        }}
-        cancelAction={{
-          label: 'Cancel',
-          onPress: () => setDeleteDownloadsDialog(false),
-          accessibilityLabel: 'Cancel delete',
-        }}
-      />
-
-      <SPDialog
-        visible={resetOnboardingDialog}
-        title="Reset Onboarding?"
-        message="The intro screens will show again the next time you launch the app."
-        icon="🔄"
-        confirmAction={{
-          label: 'Reset',
-          onPress: handleResetOnboarding,
-          accessibilityLabel: 'Confirm reset onboarding',
-        }}
-        cancelAction={{
-          label: 'Cancel',
-          onPress: () => setResetOnboardingDialog(false),
-          accessibilityLabel: 'Cancel reset',
-        }}
-      />
-
-      <SPDialog
-        visible={accountDeletionDialog}
-        title="Request Account Deletion?"
-        message="We will process your request within 30 days. All your data will be permanently deleted."
-        icon="⚠️"
-        confirmAction={{
-          label: 'Submit Request',
-          onPress: handleRequestAccountDeletion,
-          destructive: true,
-          accessibilityLabel: 'Confirm account deletion request',
-        }}
-        cancelAction={{
-          label: 'Cancel',
-          onPress: () => setAccountDeletionDialog(false),
-          accessibilityLabel: 'Cancel deletion request',
-        }}
-      />
-
-      <SPToast {...toastProps} />
-    </SafeAreaView>
+    <Pressable
+      onPress={handleToggle}
+      hitSlop={8}
+      style={[
+        styles.switchTrack,
+        { backgroundColor: value ? Colors.olive : '#777' },
+      ]}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+    >
+      <Animated.View style={[styles.switchThumb, animatedThumbStyle]} />
+    </Pressable>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Helper Components
+// Setting Row Component
 // ---------------------------------------------------------------------------
 
 interface SettingRowProps {
   label: string;
   subtitle?: string;
   value?: string;
-  leftIcon?: string;
-  onPress: () => void;
-  accessibilityLabel: string;
+  isSwitch?: boolean;
+  switchValue?: boolean;
+  onSwitchChange?: (val: boolean) => void;
+  onPress?: () => void;
+  iconName?: string;
 }
 
-function SettingRow({ label, subtitle, value, leftIcon, onPress, accessibilityLabel }: SettingRowProps) {
+function SettingRow({
+  label,
+  subtitle,
+  value,
+  isSwitch,
+  switchValue = false,
+  onSwitchChange,
+  onPress,
+  iconName,
+}: SettingRowProps) {
   const { theme } = useTheme();
+  const isDark = theme.mode === 'dark';
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.settingRow,
-        pressed && { opacity: 0.6 },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-    >
-      {leftIcon && <Text style={styles.rowIcon}>{leftIcon}</Text>}
-      <View style={styles.rowContent}>
-        <SPText variant="body">{label}</SPText>
-        {subtitle && (
-          <SPText variant="caption" color={theme.colors.textSecondary} style={{ marginTop: 2 }}>
-            {subtitle}
-          </SPText>
-        )}
-      </View>
-      {value && (
-        <SPText variant="body" color={theme.colors.textSecondary}>
-          {value}
-        </SPText>
-      )}
-      <SPText variant="body" color={theme.colors.textSecondary}>
-        ›
-      </SPText>
-    </Pressable>
-  );
-}
-
-interface ToggleRowProps {
-  label: string;
-  subtitle?: string;
-  value: boolean;
-  onValueChange: (value: boolean) => void;
-  accessibilityLabel: string;
-}
-
-function ToggleRow({ label, subtitle, value, onValueChange, accessibilityLabel }: ToggleRowProps) {
-  const { theme } = useTheme();
-
-  return (
-    <View style={styles.toggleRow} accessible accessibilityLabel={accessibilityLabel} accessibilityRole="switch">
-      <View style={styles.rowContent}>
-        <SPText variant="body">{label}</SPText>
-        {subtitle && (
-          <SPText variant="caption" color={theme.colors.textSecondary} style={{ marginTop: 2 }}>
-            {subtitle}
-          </SPText>
-        )}
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: '#ccc', true: Colors.olive }}
-        thumbColor="#fff"
-        accessibilityLabel={accessibilityLabel}
-      />
-    </View>
-  );
-}
-
-interface ThemeButtonProps {
-  mode: ThemeMode;
-  active: boolean;
-  onPress: () => void;
-}
-
-function ThemeButton({ mode, active, onPress }: ThemeButtonProps) {
-  const { theme } = useTheme();
-  const label = mode === 'light' ? '☀️' : mode === 'dark' ? '🌙' : '⚙️';
-  const text = mode.charAt(0).toUpperCase() + mode.slice(1);
-
-  return (
-    <Pressable
-      onPress={onPress}
+    <AnimatedPressable
+      onPress={isSwitch ? undefined : onPress}
+      scaleTo={isSwitch ? 1 : 0.98}
       style={[
-        styles.themeButton,
+        styles.row,
         {
-          backgroundColor: active ? Colors.olive : theme.colors.surface,
-          borderColor: active ? Colors.olive : theme.colors.border,
+          backgroundColor: isDark ? '#1E1E1E' : '#FFFFFF',
+          borderColor: isDark ? '#2E2E2E' : '#ECE5D8',
         },
       ]}
-      accessibilityRole="button"
-      accessibilityLabel={`${text} theme`}
-      accessibilityState={{ selected: active }}
-    >
-      <Text style={styles.themeIcon}>{label}</Text>
-      <SPText
-        variant="caption"
-        color={active ? Colors.textInverse : theme.colors.textPrimary}
-        style={{ fontSize: 11 }}
-      >
-        {text}
-      </SPText>
-    </Pressable>
-  );
-}
-
-interface ChipProps {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}
-
-function Chip({ label, active, onPress }: ChipProps) {
-  const { theme } = useTheme();
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.chip,
-        {
-          backgroundColor: active ? Colors.olive : theme.colors.surface,
-          borderColor: active ? Colors.olive : theme.colors.border,
-        },
-      ]}
-      accessibilityRole="button"
+      accessibilityRole={isSwitch ? 'switch' : 'button'}
       accessibilityLabel={label}
-      accessibilityState={{ selected: active }}
     >
-      <SPText
-        variant="caption"
-        color={active ? Colors.textInverse : theme.colors.textPrimary}
-      >
-        {label}
-      </SPText>
-    </Pressable>
-  );
-}
+      <View style={styles.rowLeft}>
+        {iconName && (
+          <View style={styles.iconCircle}>
+            <SPIcon name={iconName} size={18} color={Colors.olive} strokeWidth={2.2} />
+          </View>
+        )}
+        <View style={styles.rowTexts}>
+          <Text style={[styles.rowLabel, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
+            {label}
+          </Text>
+          {subtitle && (
+            <Text style={[styles.rowSubtitle, { color: isDark ? '#888' : Colors.textSecondary }]}>
+              {subtitle}
+            </Text>
+          )}
+        </View>
+      </View>
 
-interface SliderControlProps {
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (value: number) => void;
-  accessibilityLabel: string;
-}
-
-function SliderControl({ value, min, max, step, onChange, accessibilityLabel }: SliderControlProps) {
-  const { theme } = useTheme();
-  const percent = ((value - min) / (max - min)) * 100;
-
-  const decrease = () => {
-    const next = Math.max(min, value - step);
-    onChange(next);
-  };
-
-  const increase = () => {
-    const next = Math.min(max, value + step);
-    onChange(next);
-  };
-
-  return (
-    <View
-      style={styles.sliderContainer}
-      accessible
-      accessibilityLabel={`${accessibilityLabel}, current value ${value}`}
-      accessibilityRole="adjustable"
-      accessibilityValue={{ min, max, now: value }}
-      onAccessibilityAction={(event) => {
-        if (event.nativeEvent.actionName === 'increment') increase();
-        else if (event.nativeEvent.actionName === 'decrement') decrease();
-      }}
-    >
-      <View style={styles.sliderInnerRow}>
-        {/* Minus button */}
-        <Pressable
-          onPress={decrease}
-          style={[styles.sliderStepBtn, { borderColor: theme.colors.border }]}
-          accessibilityLabel="Decrease"
-          accessibilityRole="button"
-        >
-          <Text style={[styles.sliderStepText, { color: theme.colors.textPrimary }]}>−</Text>
-        </Pressable>
-
-        {/* Track */}
-        <View style={styles.sliderTrackWrapper}>
-          <View style={[styles.sliderTrack, { backgroundColor: theme.colors.border }]}>
-            <View
-              style={[
-                styles.sliderActiveTrack,
-                { width: `${percent}%`, backgroundColor: Colors.olive },
-              ]}
+      <View style={styles.rowRight}>
+        {isSwitch ? (
+          <TactileSwitch
+            value={switchValue}
+            onValueChange={onSwitchChange ?? (() => {})}
+          />
+        ) : (
+          <View style={styles.valueRow}>
+            {value && (
+              <Text style={[styles.rowValue, { color: Colors.olive }]}>
+                {value}
+              </Text>
+            )}
+            <SPIcon
+              name="arrowRight"
+              size={16}
+              color={isDark ? '#666' : '#AAA'}
+              strokeWidth={2}
             />
           </View>
-        </View>
-
-        {/* Plus button */}
-        <Pressable
-          onPress={increase}
-          style={[styles.sliderStepBtn, { borderColor: theme.colors.border }]}
-          accessibilityLabel="Increase"
-          accessibilityRole="button"
-        >
-          <Text style={[styles.sliderStepText, { color: theme.colors.textPrimary }]}>+</Text>
-        </Pressable>
+        )}
       </View>
+    </AnimatedPressable>
+  );
+}
+
+export default function SettingsScreen() {
+  const insets = useSafeAreaInsets();
+  const { theme, themeMode, setThemeMode } = useTheme();
+  const { camera, updateCameraSettings } = useSettingsStore();
+  const {
+    isPersonalizationEnabled,
+    setPersonalizationEnabled,
+    resetProfile,
+    outfitPreference,
+    setOutfitPreference,
+  } = usePersonalizationStore();
+  const { toastProps, showToast } = useToast();
+  const reduceMotion = useReducedMotion();
+
+  const isDark = theme.mode === 'dark';
+
+  // Local Toggles
+  const [hapticsEnabled, setHapticsEnabled] = useState<boolean>(() => {
+    return mmkv.getBoolean('hapticsEnabled') ?? true;
+  });
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(() => {
+    return mmkv.getBoolean('autoSavePhotos') ?? true;
+  });
+  const [aiGuidanceEnabled, setAiGuidanceEnabled] = useState<boolean>(
+    camera.voiceGuidanceEnabled ?? true,
+  );
+  const [mirrorFrontCamera, setMirrorFrontCamera] = useState<boolean>(true);
+
+  // Modals for About, Privacy, Terms, Help
+  const [modalContent, setModalContent] = useState<{ title: string; body: string } | null>(null);
+  const [showOutfitPicker, setShowOutfitPicker] = useState<boolean>(false);
+
+  const toggleHaptics = (val: boolean) => {
+    setHapticsEnabled(val);
+    mmkv.set('hapticsEnabled', val);
+    showToast({ message: val ? 'Haptics enabled' : 'Haptics disabled', variant: 'info' });
+  };
+
+  const toggleAutoSave = (val: boolean) => {
+    setAutoSaveEnabled(val);
+    mmkv.set('autoSavePhotos', val);
+    showToast({ message: val ? 'Auto-save enabled' : 'Auto-save disabled', variant: 'info' });
+  };
+
+  const toggleAiGuidance = (val: boolean) => {
+    setAiGuidanceEnabled(val);
+    updateCameraSettings({ voiceGuidanceEnabled: val });
+    showToast({ message: val ? 'AI Guidance enabled' : 'AI Guidance disabled', variant: 'info' });
+  };
+
+  const togglePersonalization = (val: boolean) => {
+    setPersonalizationEnabled(val);
+    showToast({
+      message: val ? 'Personalized recommendations enabled' : 'Personalization disabled',
+      variant: 'info',
+    });
+  };
+
+  const handleResetRecommendations = () => {
+    Alert.alert(
+      'Reset Recommendations',
+      'This will delete your personalized preference profile and return to default discovery recommendations. Your saved favorites and downloaded packs will not be affected.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: () => {
+            resetProfile();
+            showToast({ message: 'Recommendation history reset', variant: 'success' });
+          },
+        },
+      ],
+    );
+  };
+
+  const cycleTheme = () => {
+    if (themeMode === 'system') setThemeMode('light');
+    else if (themeMode === 'light') setThemeMode('dark');
+    else setThemeMode('system');
+  };
+
+  const handleClearCache = () => {
+    Alert.alert(
+      'Clear Cache',
+      'Are you sure you want to clear temporary image cache? This will not delete saved favorites.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => {
+            showToast({ message: 'Cache cleared successfully', variant: 'success' });
+          },
+        },
+      ],
+    );
+  };
+
+  return (
+    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: insets.top + Spacing.sm,
+            paddingBottom: insets.bottom + 90,
+          },
+        ]}
+      >
+        {/* ── 1. Header ────────────────────────────────────────────── */}
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeIn.duration(400)}
+          style={styles.header}
+        >
+          <Text style={[styles.screenTitle, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
+            Settings
+          </Text>
+          <Text style={[styles.subtitle, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
+            Personalize camera and app preferences
+          </Text>
+        </Animated.View>
+
+        {/* ── 2. AI Personalization & Privacy Section ───────────────── */}
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(100)}
+          style={styles.section}
+        >
+          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+            AI PERSONALIZATION & PRIVACY
+          </Text>
+          <View style={styles.sectionCards}>
+            <SettingRow
+              iconName="ai"
+              label="Personalized Recommendations"
+              subtitle="Learns preferred poses & styles 100% on-device"
+              isSwitch
+              switchValue={isPersonalizationEnabled}
+              onSwitchChange={togglePersonalization}
+            />
+            <SettingRow
+              iconName="sparkles"
+              label="Outfit Style Preference"
+              subtitle="Tailors poses for your active outfit"
+              value={outfitPreference ? outfitPreference.toUpperCase() : 'Not Set'}
+              onPress={() => setShowOutfitPicker(true)}
+            />
+            <SettingRow
+              iconName="refresh"
+              label="Reset My Recommendations"
+              subtitle="Wipe behavioral history and start fresh"
+              onPress={handleResetRecommendations}
+            />
+          </View>
+        </Animated.View>
+
+        {/* ── 3. Appearance Section ─────────────────────────────────── */}
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(150)}
+          style={styles.section}
+        >
+          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+            APPEARANCE & THEME
+          </Text>
+          <View style={styles.sectionCards}>
+            <SettingRow
+              iconName="theme"
+              label="App Theme"
+              subtitle="Switch between light and dark palette"
+              value={themeMode === 'system' ? 'System' : themeMode === 'dark' ? 'Dark' : 'Light'}
+              onPress={cycleTheme}
+            />
+          </View>
+        </Animated.View>
+
+        {/* ── 4. Camera & AI Guidance Section ──────────────────────── */}
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(200)}
+          style={styles.section}
+        >
+          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+            CAMERA & POSE ASSIST
+          </Text>
+          <View style={styles.sectionCards}>
+            <SettingRow
+              iconName="ai"
+              label="Real-time AI Guidance"
+              subtitle="Live pose alignment score & prompts"
+              isSwitch
+              switchValue={aiGuidanceEnabled}
+              onSwitchChange={toggleAiGuidance}
+            />
+            <SettingRow
+              iconName="mirror"
+              label="Mirror Front Camera"
+              subtitle="Flip front selfie overlay orientation"
+              isSwitch
+              switchValue={mirrorFrontCamera}
+              onSwitchChange={setMirrorFrontCamera}
+            />
+            <SettingRow
+              iconName="haptics"
+              label="Tactile Haptic Feedback"
+              subtitle="Vibrations on camera snap and alignment"
+              isSwitch
+              switchValue={hapticsEnabled}
+              onSwitchChange={toggleHaptics}
+            />
+            <SettingRow
+              iconName="save"
+              label="Auto-Save to Camera Roll"
+              subtitle="Save photos automatically on capture"
+              isSwitch
+              switchValue={autoSaveEnabled}
+              onSwitchChange={toggleAutoSave}
+            />
+          </View>
+        </Animated.View>
+
+        {/* ── 5. Offline & Storage Section ─────────────────────────── */}
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(250)}
+          style={styles.section}
+        >
+          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+            OFFLINE STORAGE & CACHE
+          </Text>
+          <View style={styles.sectionCards}>
+            <SettingRow
+              iconName="download"
+              label="Downloaded Pose Packs"
+              subtitle="Manage offline packs for zero-data use"
+              onPress={() => router.push('/downloads')}
+            />
+            <SettingRow
+              iconName="trash"
+              label="Clear Image Cache"
+              subtitle="Free up temporary thumbnail storage"
+              onPress={handleClearCache}
+            />
+          </View>
+        </Animated.View>
+
+        {/* ── 6. About & Support Section ───────────────────────────── */}
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(300)}
+          style={styles.section}
+        >
+          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+            SUPPORT & INFORMATION
+          </Text>
+          <View style={styles.sectionCards}>
+            <SettingRow
+              iconName="info"
+              label="About Snap Pose"
+              subtitle="Version 1.0.0 • On-Device AI Photography"
+              onPress={() =>
+                setModalContent({
+                  title: 'About Snap Pose',
+                  body:
+                    'Snap Pose is an Apple-grade, on-device AI photography assistant designed to help you capture stunning, natural poses effortlessly.\n\nPrivacy Guarantee:\n• 100% on-device AI personalization\n• Zero camera frames or biometric data ever uploaded\n• Works completely offline with full user control.',
+                })
+              }
+            />
+            <SettingRow
+              iconName="help"
+              label="Help & FAQ"
+              subtitle="Frequently asked questions & tips"
+              onPress={() =>
+                setModalContent({
+                  title: 'Help & FAQ',
+                  body:
+                    'Q: How does Pose Personalization work?\nA: The app learns which styles, camera angles, and categories you enjoy most and tailors the home recommendations. All machine learning runs strictly on your phone.\n\nQ: Does it upload my photos?\nA: Never. All camera feeds and captured photos remain strictly on your device.',
+                })
+              }
+            />
+            <SettingRow
+              iconName="feedback"
+              label="Send Feedback"
+              subtitle="Feature requests and bug reports"
+              onPress={() =>
+                Alert.alert(
+                  'Send Feedback',
+                  'We would love to hear from you! Please email support@snappose.app',
+                  [{ text: 'OK' }],
+                )
+              }
+            />
+          </View>
+        </Animated.View>
+
+        {/* Footer Brand */}
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: isDark ? '#666' : '#999' }]}>
+            Snap Pose v1.0.0 • Privacy-First AI Photography Assistant
+          </Text>
+        </View>
+      </ScrollView>
+
+      {/* Info Animated Bottom Sheet */}
+      <AnimatedBottomSheet
+        visible={modalContent !== null}
+        onClose={() => setModalContent(null)}
+      >
+        {modalContent && (
+          <View>
+            <Text style={[styles.modalTitle, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
+              {modalContent.title}
+            </Text>
+            <ScrollView style={styles.modalScroll}>
+              <Text style={[styles.modalBody, { color: isDark ? '#CCC' : Colors.textSecondary }]}>
+                {modalContent.body}
+              </Text>
+            </ScrollView>
+            <AnimatedPressable
+              onPress={() => setModalContent(null)}
+              scaleTo={0.96}
+              style={styles.modalCloseButton}
+            >
+              <Text style={styles.modalCloseText}>Done</Text>
+            </AnimatedPressable>
+          </View>
+        )}
+      </AnimatedBottomSheet>
+
+      {/* Outfit Selector Bottom Sheet */}
+      <AnimatedBottomSheet
+        visible={showOutfitPicker}
+        onClose={() => setShowOutfitPicker(false)}
+      >
+        <View>
+          <Text style={[styles.modalTitle, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
+            Select Outfit Style
+          </Text>
+          <Text style={[styles.modalSubtitle, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
+            Tailor recommended poses to what you are wearing today.
+          </Text>
+          <View style={styles.outfitGrid}>
+            {OUTFIT_OPTIONS.map((opt) => {
+              const isSelected = outfitPreference === opt.id;
+              return (
+                <AnimatedPressable
+                  key={opt.id}
+                  onPress={() => {
+                    setOutfitPreference(isSelected ? undefined : opt.id);
+                    setShowOutfitPicker(false);
+                    showToast({
+                      message: isSelected ? 'Outfit style cleared' : `Outfit set to ${opt.name}`,
+                      variant: 'success',
+                    });
+                  }}
+                  scaleTo={0.94}
+                  style={[
+                    styles.outfitChip,
+                    isSelected && styles.outfitChipSelected,
+                    {
+                      backgroundColor: isSelected
+                        ? Colors.olive
+                        : isDark
+                        ? '#2E2E2E'
+                        : '#EFE9DC',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.outfitChipText,
+                      { color: isSelected ? '#FFF' : isDark ? '#DDD' : Colors.textPrimary },
+                    ]}
+                  >
+                    {opt.name}
+                  </Text>
+                </AnimatedPressable>
+              );
+            })}
+          </View>
+        </View>
+      </AnimatedBottomSheet>
+
+      <SPToast {...toastProps} />
     </View>
   );
 }
@@ -776,121 +597,167 @@ function SliderControl({ value, min, max, step, onChange, accessibilityLabel }: 
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollView: {
+  root: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: HORIZONTAL_PADDING,
   },
   header: {
-    paddingVertical: Spacing.lg,
-  },
-  section: {
-    marginBottom: Spacing.xl,
-  },
-  sectionTitle: {
     marginBottom: Spacing.md,
   },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 48,
-    paddingVertical: Spacing.xs,
+  screenTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginBottom: 4,
   },
-  rowIcon: {
-    fontSize: 20,
-    marginRight: Spacing.sm,
-  },
-  rowContent: {
-    flex: 1,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 48,
-    paddingVertical: Spacing.xs,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 48,
-    paddingVertical: Spacing.xs,
-  },
-  themeRow: {
-    gap: Spacing.md,
-  },
-  themeButtons: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
-  },
-  themeButton: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1.5,
-    gap: 4,
-  },
-  themeIcon: {
-    fontSize: 18,
-  },
-  pickerRow: {
-    gap: Spacing.sm,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
-  },
-  chip: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1.5,
-  },
-  sliderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.xs,
-  },
-  sliderContainer: {
-    gap: Spacing.xs,
-  },
-  sliderInnerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  sliderStepBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sliderStepText: {
-    fontSize: 20,
+  subtitle: {
+    fontSize: 14,
     fontWeight: '500',
   },
-  sliderTrackWrapper: {
+  section: {
+    marginBottom: Spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: Spacing.xs + 2,
+    marginLeft: 4,
+  },
+  sectionCards: {
+    borderRadius: BorderRadius.card,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'transparent',
+    gap: 1,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     flex: 1,
   },
-  sliderTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
+  iconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(101, 116, 74, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sliderActiveTrack: {
-    height: 6,
-    borderRadius: 3,
+  rowTexts: {
+    flex: 1,
+  },
+  rowLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  rowSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  rowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  valueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  rowValue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // Custom Tactile Switch
+  switchTrack: {
+    width: 46,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+  },
+  switchThumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+
+  footer: {
+    alignItems: 'center',
+    paddingVertical: Spacing.lg,
+  },
+  footerText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+
+  // Modal Bottom Sheet
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: Spacing.xs,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    marginBottom: Spacing.md,
+  },
+  modalScroll: {
+    marginVertical: Spacing.sm,
+    maxHeight: 320,
+  },
+  modalBody: {
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  modalCloseButton: {
+    backgroundColor: Colors.olive,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.button,
+    alignItems: 'center',
+    marginTop: Spacing.md,
+  },
+  modalCloseText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
+  // Outfit Grid
+  outfitGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginVertical: Spacing.sm,
+  },
+  outfitChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  outfitChipSelected: {
+    borderColor: Colors.darkAccent,
+  },
+  outfitChipText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

@@ -5,12 +5,12 @@
  * [Req 8.10, 22]
  */
 
-import { MobileAds, InterstitialAd, RewardedAd as MobileRewardedAd, AppOpenAd, TestIds, AdRequest } from 'react-native-google-mobile-ads';
+import { MobileAds, InterstitialAd, RewardedAd as MobileRewardedAd, AppOpenAd, TestIds } from 'react-native-google-mobile-ads';
 import type { AdAdapter } from '../domain/interfaces/AdAdapter';
 import type { NativeAd, RewardedAd } from '../types';
 import { useCameraStore } from '@/stores/cameraStore';
 import { mmkvGet } from '@/database/mmkv/mmkvClient';
-import { KEYS } from '@/database/mmkv/keys';
+import { MMKV_KEYS } from '@/database/mmkv/keys';
 
 export class AdMobAdapter implements AdAdapter {
   private static instance: AdMobAdapter;
@@ -32,20 +32,19 @@ export class AdMobAdapter implements AdAdapter {
 
   public isAdSuppressed(): boolean {
     const isCameraActive = useCameraStore.getState().isActive;
-    const onboardingCompleted = mmkvGet<boolean>(KEYS.ONBOARDING_COMPLETED) ?? false;
+    const onboardingCompleted = mmkvGet<boolean>(MMKV_KEYS.ONBOARDING_COMPLETED) ?? false;
     return isCameraActive || !onboardingCompleted;
   }
 
-  public async loadNativeAd(adUnitId: string): Promise<NativeAd> {
+  public async loadNativeAd(_adUnitId: string): Promise<NativeAd> {
     if (this.isAdSuppressed()) {
       throw new Error('Ads are suppressed during active camera or onboarding.');
     }
-    const unitId = adUnitId || TestIds.NATIVE;
     return {
       headline: 'Discover More Poses',
       body: 'Explore our vast collection of creative pose guides.',
       callToAction: 'View Now',
-      advertiser: 'Snap Pose',
+      advertiser: 'POSEHANUM',
     };
   }
 
@@ -56,9 +55,7 @@ export class AdMobAdapter implements AdAdapter {
     });
 
     return new Promise((resolve, reject) => {
-      let isLoaded = false;
       const unsubscribeLoaded = rewarded.addAdEventListener('loaded' as any, () => {
-        isLoaded = true;
         resolve({
           show: async (): Promise<boolean> => {
             return new Promise((res) => {

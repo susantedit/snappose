@@ -52,7 +52,7 @@ export interface SPPermissionCardProps {
 export function SPPermissionCard({
   iconName = 'camera',
   title = 'Camera Access Required',
-  description = 'Snap Pose needs camera access to show the live preview and help you recreate poses. Please grant camera permission in Settings.',
+  description = 'POSEHANUM needs camera access to show the live preview and help you recreate poses. Please grant camera permission in Settings.',
   actionLabel = 'Open Settings',
   onAction,
   style,
@@ -70,11 +70,11 @@ export function SPPermissionCard({
   return (
     <View
       style={[styles.container, style]}
-      accessibilityRole="alertdialog"
+      accessibilityRole="alert"
       accessibilityLabel={title}
     >
       {/* Icon */}
-      <View style={styles.iconContainer} accessibilityHidden>
+      <View style={styles.iconContainer} accessibilityElementsHidden>
         <SPIcon name={iconName} size={48} color={Colors.olive} />
       </View>
 

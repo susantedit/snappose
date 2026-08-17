@@ -22,3 +22,11 @@ export async function addFavoriteRemote(poseId: string): Promise<FavoriteRecord>
 export async function removeFavoriteRemote(poseId: string): Promise<void> {
   return apiDelete<void>(`/favorites/${poseId}`);
 }
+
+export async function toggleFavorite(poseId: string, isFavorite: boolean): Promise<FavoriteRecord | void> {
+  if (isFavorite) {
+    return addFavoriteRemote(poseId);
+  } else {
+    return removeFavoriteRemote(poseId);
+  }
+}

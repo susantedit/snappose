@@ -22,7 +22,7 @@ describe('LandmarkNormaliser Property-Based Tests', () => {
   it('Property 1: Scale invariance — scaling input by factor s > 0 produces identical normalised coordinates within 1e-4 tolerance', () => {
     fc.assert(
       fc.property(
-        fc.float({ min: 0.1, max: 10.0, noNaN: true }),
+        fc.double({ min: 0.1, max: 10.0, noNaN: true }),
         (scaleFactor) => {
           const scaledSkeleton = baseValidSkeleton.map((lm) => ({
             ...lm,
@@ -52,8 +52,8 @@ describe('LandmarkNormaliser Property-Based Tests', () => {
   it('Property 2: Translation invariance — translating input by (dx, dy) produces identical normalised coordinates within 1e-4 tolerance', () => {
     fc.assert(
       fc.property(
-        fc.float({ min: -500, max: 500, noNaN: true }),
-        fc.float({ min: -500, max: 500, noNaN: true }),
+        fc.double({ min: -500, max: 500, noNaN: true }),
+        fc.double({ min: -500, max: 500, noNaN: true }),
         (dx, dy) => {
           const translatedSkeleton = baseValidSkeleton.map((lm) => ({
             ...lm,

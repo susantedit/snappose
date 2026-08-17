@@ -1,7 +1,4 @@
-/**
- * Poses feature types.
- * [Req 4, 5, 7]
- */
+import type { NormalisedLandmarks } from '@/features/ai/types';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 export type Orientation = 'portrait' | 'landscape';
@@ -9,12 +6,15 @@ export type Orientation = 'portrait' | 'landscape';
 export interface Pose {
   id: string;
   categoryId: string;
+  category?: string;
   title: string;
   description: string;
   imageUrl: string;
   overlayImage: string;
   thumbnailUrl: string;
   difficulty: Difficulty;
+  instructions?: string[];
+  tips?: string[];
   indoor: boolean;
   tags: string[];
   views: number;
@@ -24,6 +24,7 @@ export interface Pose {
   cameraAngle: string;
   lighting: string;
   orientation: Orientation;
+  landmarks?: NormalisedLandmarks;
   createdAt: string;
   updatedAt: string;
 }

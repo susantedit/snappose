@@ -20,7 +20,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useTheme } from '@/constants/theme';
-import { AnimationDurations, BorderRadius, Colors, Spacing, Typography } from '@/constants/designTokens';
+import { AnimationDurations, BorderRadius, Spacing, Typography } from '@/constants/designTokens';
 import { SPBadge } from '@/components/atoms/SPBadge';
 
 // ---------------------------------------------------------------------------

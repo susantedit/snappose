@@ -11,7 +11,11 @@
 import '@testing-library/jest-native/extend-expect';
 
 // Silence the noisy React Native Animated "useNativeDriver" warning in tests.
-jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper');
+try {
+  jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper', () => ({}), { virtual: true });
+} catch {
+  // Ignore if not present in modern RN
+}
 
 // Mock expo-localization so i18n initialises without a real device.
 jest.mock('expo-localization', () => ({

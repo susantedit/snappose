@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { Image, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { BorderRadius, Colors, Typography } from '@/constants/designTokens';
+import { Colors, Typography } from '@/constants/designTokens';
 
 export type SPAvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 

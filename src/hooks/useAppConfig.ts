@@ -22,6 +22,8 @@ export function useAppConfig() {
           adsEnabled: true,
           autoCaptureThreshold: 94,
           voiceGuidanceEnabled: true,
+          featuredCategories: [],
+          forceUpdate: false,
         };
       }
     },

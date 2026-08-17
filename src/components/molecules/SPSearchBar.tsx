@@ -2,6 +2,7 @@
  * SPSearchBar — debounced search input with clear button.
  * Used on the Home and Search screens.
  * Debounce delay configurable (default 200 ms per Req 6.1).
+ * All icons rendered via crisp SVG SPIcon components.
  * [Req 4.1, 6.1]
  */
 
@@ -17,6 +18,7 @@ import {
 } from 'react-native';
 import { useTheme } from '@/constants/theme';
 import { BorderRadius, Colors, Spacing, Typography } from '@/constants/designTokens';
+import { SPIcon } from '@/components/atoms/SPIcon';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -104,7 +106,7 @@ export function SPSearchBar({
   const bgColor = isDark ? '#2A2A2A' : '#FFFFFF';
   const borderColor = isDark ? Colors.borderDark : Colors.border;
   const textColor = isDark ? '#FFFFFF' : Colors.textPrimary;
-  const placeholderColor = isDark ? '#666666' : Colors.textDisabled;
+  const placeholderColor = isDark ? '#888888' : Colors.textDisabled;
 
   if (readOnly) {
     return (
@@ -115,7 +117,7 @@ export function SPSearchBar({
         accessibilityLabel={accessibilityLabel}
         accessibilityHint="Tap to search poses"
       >
-        <Text style={[styles.searchIcon, { color: placeholderColor }]}>🔍</Text>
+        <SPIcon name="search" size={18} color={placeholderColor} strokeWidth={2.2} />
         <Text style={[styles.placeholder, { color: placeholderColor }]}>{placeholder}</Text>
       </Pressable>
     );
@@ -126,7 +128,7 @@ export function SPSearchBar({
       style={[styles.container, { backgroundColor: bgColor, borderColor }, style]}
       accessibilityRole="search"
     >
-      <Text style={[styles.searchIcon, { color: placeholderColor }]}>🔍</Text>
+      <SPIcon name="search" size={18} color={placeholderColor} strokeWidth={2.2} />
       <TextInput
         value={localText}
         onChangeText={handleChange}
@@ -150,7 +152,7 @@ export function SPSearchBar({
           accessibilityRole="button"
           accessibilityLabel="Clear search"
         >
-          <Text style={[styles.clearIcon, { color: placeholderColor }]}>✕</Text>
+          <SPIcon name="close" size={14} color={placeholderColor} strokeWidth={2.4} />
         </Pressable>
       )}
     </View>
@@ -169,17 +171,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     paddingHorizontal: Spacing.md,
-    gap: Spacing.xs,
-  },
-  searchIcon: {
-    fontSize: 16,
-    lineHeight: 20,
-    flexShrink: 0,
+    gap: Spacing.sm,
   },
   input: {
     flex: 1,
     fontSize: Typography.sizes.body,
-    paddingVertical: 0, // remove Android top/bottom padding
+    paddingVertical: 0,
   },
   placeholder: {
     flex: 1,
@@ -191,9 +188,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-  },
-  clearIcon: {
-    fontSize: 12,
-    fontWeight: '600',
   },
 });

@@ -10,17 +10,15 @@ import React, { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import {
   Canvas,
-  Circle,
-  Paint,
   Path,
   Skia,
   type SkPath,
 } from '@shopify/react-native-skia';
-import Animated, {
-  useAnimatedProps,
+import {
   useDerivedValue,
   useSharedValue,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { AnimationDurations, Colors } from '@/constants/designTokens';
 
@@ -35,7 +33,7 @@ const SCORE_BANDS: Array<{ max: number; color: string }> = [
   { max: 100, color: Colors.scoreDarkGreen },
 ];
 
-function getScoreColor(score: number): string {
+export function getScoreColor(score: number): string {
   for (const band of SCORE_BANDS) {
     if (score <= band.max) return band.color;
   }
@@ -162,8 +160,8 @@ export function SPProgressRing({
 interface AnimatedArcProps {
   path: SkPath;
   circumference: number;
-  strokeDashOffset: Animated.SharedValue<number>;
-  ringColor: Animated.SharedValue<string>;
+  strokeDashOffset: SharedValue<number>;
+  ringColor: SharedValue<string>;
   strokeWidth: number;
 }
 

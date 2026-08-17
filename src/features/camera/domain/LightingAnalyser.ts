@@ -78,7 +78,20 @@ export function scoreFromMetrics(
   contrast: number,
   backlightRatio: number,
 ): LightingAnalysisResult {
-  // ── Detect backlight ─────────────────────────────────────────────────────
+  // ── Detect overexposure first (overall frame is blown out) ────────────────
+  if (brightness > HIGH_BRIGHTNESS_THRESHOLD) {
+    const overshoot = brightness - HIGH_BRIGHTNESS_THRESHOLD;
+    const score = Math.round(Math.max(20, 80 - overshoot / 2));
+    const acceptable = score >= ACCEPTABLE_THRESHOLD;
+    return {
+      score,
+      condition: 'OVEREXPOSED',
+      suggestion: 'Turn toward the light.',
+      acceptable,
+    };
+  }
+
+  // ── Detect backlight (subject in front of bright light source) ───────────
   if (backlightRatio > BACKLIGHT_RATIO_THRESHOLD) {
     const score = Math.round(Math.max(10, 60 - backlightRatio * 100));
     return { score, condition: 'BACKLIT', suggestion: 'Avoid backlight.', acceptable: false };
@@ -92,38 +105,14 @@ export function scoreFromMetrics(
     return { score, condition: 'TOO_DARK', suggestion, acceptable: false };
   }
 
-  // ── Detect overexposure ──────────────────────────────────────────────────
-  if (brightness > HIGH_BRIGHTNESS_THRESHOLD) {
-    const overshoot = brightness - HIGH_BRIGHTNESS_THRESHOLD;
-    const score = Math.round(Math.max(20, 80 - overshoot / 2));
-    const acceptable = score >= ACCEPTABLE_THRESHOLD;
-    return {
-      score,
-      condition: 'OVEREXPOSED',
-      suggestion: 'Turn toward the light.',
-      acceptable,
-    };
-  }
-
-  // ── Detect low contrast ──────────────────────────────────────────────────
-  if (contrast < LOW_CONTRAST_THRESHOLD) {
-    const score = Math.round(50 + (contrast / LOW_CONTRAST_THRESHOLD) * 30);
-    const acceptable = score >= ACCEPTABLE_THRESHOLD;
-    return {
-      score,
-      condition: acceptable ? 'GOOD' : 'TOO_DARK',
-      suggestion: acceptable ? null : 'Turn toward the light.',
-      acceptable,
-    };
-  }
-
-  // ── Ideal lighting ───────────────────────────────────────────────────────
+  // ── Ideal lighting / Contrast adjustment ─────────────────────────────────
   // Map brightness 45–210 → score 60–100
-  const score = Math.round(
+  const contrastPenalty = contrast < LOW_CONTRAST_THRESHOLD ? (LOW_CONTRAST_THRESHOLD - contrast) * 0.1 : 0;
+  const baseScore = Math.round(
     60 + ((brightness - LOW_BRIGHTNESS_THRESHOLD) /
-      (HIGH_BRIGHTNESS_THRESHOLD - LOW_BRIGHTNESS_THRESHOLD)) * 40,
+      (HIGH_BRIGHTNESS_THRESHOLD - LOW_BRIGHTNESS_THRESHOLD)) * 40 - contrastPenalty,
   );
-  const clamped = Math.max(0, Math.min(100, score));
+  const clamped = Math.max(0, Math.min(100, baseScore));
   return { score: clamped, condition: 'GOOD', suggestion: null, acceptable: clamped >= ACCEPTABLE_THRESHOLD };
 }
 
@@ -158,8 +147,8 @@ interface FrameMetrics {
 }
 
 function computeMetrics(pixels: Uint8Array, width: number, height: number): FrameMetrics {
-  // Sample every 8th pixel row and column for speed
-  const step = 8;
+  // Sample every Nth pixel (1 for small frames/tests, 8 for full camera frames)
+  const step = (width <= 64 || height <= 64) ? 1 : 8;
   let lumSum = 0;
   let lumSumSq = 0;
   let count = 0;
@@ -185,7 +174,6 @@ function computeMetrics(pixels: Uint8Array, width: number, height: number): Fram
   const contrast = Math.sqrt(Math.max(0, variance));
 
   // Backlight: fraction of sampled pixels that are very bright (lum > 200)
-  // Re-pass for backlight ratio
   let brightPixels = 0;
   let totalSampled = 0;
   for (let y = 0; y < height; y += step) {

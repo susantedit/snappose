@@ -4,11 +4,7 @@
  * Features: 5 tabs, centre Camera FAB (Olive Green), glassmorphism blur,
  * dark/light compatible, accessibility labels on all tabs.
  * Height: 72 dp + safe area inset. [Req 32, Req 47.2]
- *
- * NOTE: The (tabs)/_layout.tsx file already integrates this pattern directly
- * via Expo Router's tabBar prop. This component provides a standalone
- * reusable version for use outside of the Expo Router tab context (e.g.,
- * storybooks, custom modal screens, or future refactors).
+ * All icons rendered via crisp SVG SPIcon with spring physics.
  */
 
 import React, { useCallback } from 'react';
@@ -24,11 +20,13 @@ import {
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/constants/theme';
 import { AnimationDurations, Colors, Layout, Typography } from '@/constants/designTokens';
+import { SPIcon } from '@/components/atoms/SPIcon';
 
 // ---------------------------------------------------------------------------
 // Tab definitions
@@ -39,10 +37,8 @@ export type SPBottomNavTab = 'home' | 'search' | 'camera' | 'favorites' | 'setti
 export interface SPBottomNavTabConfig {
   id: SPBottomNavTab;
   label: string;
-  /** Emoji/symbol used as icon (replaced with real icons when icon library is added). */
-  icon: string;
-  /** Active icon variant. */
-  activeIcon: string;
+  iconName: string;
+  activeIconName?: string;
   isCamera?: boolean;
   accessibilityLabel: string;
   accessibilityHint: string;
@@ -52,24 +48,21 @@ const DEFAULT_TABS: SPBottomNavTabConfig[] = [
   {
     id: 'home',
     label: 'Home',
-    icon: '⌂',
-    activeIcon: '⌂',
+    iconName: 'home',
     accessibilityLabel: 'Home',
     accessibilityHint: 'Navigate to Home screen',
   },
   {
     id: 'search',
     label: 'Search',
-    icon: '⌕',
-    activeIcon: '⌕',
+    iconName: 'search',
     accessibilityLabel: 'Search',
     accessibilityHint: 'Navigate to Search screen',
   },
   {
     id: 'camera',
     label: 'Camera',
-    icon: '📷',
-    activeIcon: '📷',
+    iconName: 'camera',
     isCamera: true,
     accessibilityLabel: 'Open Camera',
     accessibilityHint: 'Open the camera to match a pose',
@@ -77,16 +70,15 @@ const DEFAULT_TABS: SPBottomNavTabConfig[] = [
   {
     id: 'favorites',
     label: 'Favorites',
-    icon: '♡',
-    activeIcon: '♥',
+    iconName: 'heart',
+    activeIconName: 'heart-filled',
     accessibilityLabel: 'Favorites',
     accessibilityHint: 'Navigate to Favorites screen',
   },
   {
     id: 'settings',
     label: 'Settings',
-    icon: '⚙',
-    activeIcon: '⚙',
+    iconName: 'settings',
     accessibilityLabel: 'Settings',
     accessibilityHint: 'Navigate to Settings screen',
   },
@@ -126,7 +118,7 @@ function TabButton({ config, isActive, activeColor, inactiveColor, onPress }: Ta
   }, [scale]);
 
   const handlePressOut = useCallback(() => {
-    scale.value = withTiming(1, { duration: AnimationDurations.quick });
+    scale.value = withSpring(1, { damping: 18, stiffness: 280 });
   }, [scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -134,6 +126,7 @@ function TabButton({ config, isActive, activeColor, inactiveColor, onPress }: Ta
   }));
 
   const color = isActive ? activeColor : inactiveColor;
+  const icon = isActive && config.activeIconName ? config.activeIconName : config.iconName;
 
   return (
     <Pressable
@@ -147,15 +140,19 @@ function TabButton({ config, isActive, activeColor, inactiveColor, onPress }: Ta
       accessibilityState={{ selected: isActive }}
     >
       <Animated.View style={[styles.tabContent, animatedStyle]}>
-        <Text style={[styles.tabIcon, { color }]}>
-          {isActive ? config.activeIcon : config.icon}
-        </Text>
+        <SPIcon
+          name={icon}
+          size={21}
+          color={color}
+          fill={icon === 'heart-filled' ? Colors.olive : undefined}
+          strokeWidth={isActive ? 2.4 : 1.9}
+        />
         <Text
           style={[
             styles.tabLabel,
             {
               color,
-              fontWeight: isActive ? '600' : '400',
+              fontWeight: isActive ? '700' : '500',
             },
           ]}
           numberOfLines={1}
@@ -189,7 +186,7 @@ function CameraFABTab({ config, isActive, onPress }: CameraFABTabProps) {
   }, [scale]);
 
   const handlePressOut = useCallback(() => {
-    scale.value = withTiming(1, { duration: AnimationDurations.medium });
+    scale.value = withSpring(1, { damping: 18, stiffness: 280 });
   }, [scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -218,7 +215,7 @@ function CameraFABTab({ config, isActive, onPress }: CameraFABTabProps) {
           animatedStyle,
         ]}
       >
-        <Text style={styles.fabIcon}>{config.icon}</Text>
+        <SPIcon name="camera" size={24} color="#FFFFFF" strokeWidth={2.2} />
       </Animated.View>
     </Pressable>
   );
@@ -303,9 +300,7 @@ export function SPBottomNav({
 const styles = StyleSheet.create({
   wrapper: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    // Allow camera FAB to overflow upward
     overflow: 'visible',
-    // Shadow above bar
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.08,
@@ -329,11 +324,7 @@ const styles = StyleSheet.create({
   tabContent: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-  },
-  tabIcon: {
-    fontSize: 20,
-    lineHeight: 24,
+    gap: 3,
   },
   tabLabel: {
     fontSize: Typography.sizes.caption,
@@ -343,7 +334,7 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    marginTop: 2,
+    marginTop: 1,
   },
   cameraTabButton: {
     flex: 1,
@@ -359,7 +350,6 @@ const styles = StyleSheet.create({
     borderRadius: Layout.fabSize / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    // Float 16 dp above bar
     marginTop: -16,
     ...Platform.select({
       android: { elevation: 8 },
@@ -370,9 +360,5 @@ const styles = StyleSheet.create({
         shadowRadius: 10,
       },
     }),
-  },
-  fabIcon: {
-    fontSize: 22,
-    lineHeight: 26,
   },
 });

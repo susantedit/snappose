@@ -9,8 +9,8 @@
  * [Req 11, 47.3]
  */
 
-import type { NormalisedLandmarks, PoseScore, GuidanceCue, Landmark } from '../types';
-import type { PoseMatchResult, ReferencePoseKey } from './types';
+import type { NormalisedLandmarks, PoseScore, GuidanceCue, Landmark, PoseLandmarks } from '../types';
+import type { PoseMatchResult, ReferencePoseKey, RegionScores } from './types';
 import type { ScoreCalculator } from './interfaces/ScoreCalculator';
 
 // ---------------------------------------------------------------------------
@@ -130,8 +130,8 @@ function angularErrorToScore(errorRad: number): number {
  * Skips any landmark with visibility < 0.60 (confidence threshold) [Req 10.4].
  */
 function regionScore(
-  userLm: NormalisedLandmarks['landmarks'],
-  refLm: NormalisedLandmarks['landmarks'],
+  userLm: Landmark[] | readonly Landmark[],
+  refLm: Landmark[] | readonly Landmark[],
   triples: [number, number, number][],
 ): number {
   let total = 0;
@@ -143,10 +143,26 @@ function regionScore(
     // Skip low-confidence landmarks
     if (uA.visibility < 0.6 || uB.visibility < 0.6 || uC.visibility < 0.6) continue;
 
+    // Joint interior angle
     const refAngle = angleBetween(refLm[a], refLm[b], refLm[c]);
     const userAngle = angleBetween(uA, uB, uC);
-    const error = Math.abs(refAngle - userAngle);
-    total += angularErrorToScore(error);
+    const jointError = Math.abs(refAngle - userAngle);
+    const jointScore = angularErrorToScore(jointError);
+
+    // Segment orientation angles (a->b and b->c)
+    const refOri1 = Math.atan2(refLm[b].y - refLm[a].y, refLm[b].x - refLm[a].x);
+    const userOri1 = Math.atan2(uB.y - uA.y, uB.x - uA.x);
+    let diff1 = Math.abs(refOri1 - userOri1);
+    if (diff1 > Math.PI) diff1 = 2 * Math.PI - diff1;
+
+    const refOri2 = Math.atan2(refLm[c].y - refLm[b].y, refLm[c].x - refLm[b].x);
+    const userOri2 = Math.atan2(uC.y - uB.y, uC.x - uB.x);
+    let diff2 = Math.abs(refOri2 - userOri2);
+    if (diff2 > Math.PI) diff2 = 2 * Math.PI - diff2;
+
+    const oriScore = (angularErrorToScore(diff1) + angularErrorToScore(diff2)) / 2;
+
+    total += 0.5 * jointScore + 0.5 * oriScore;
     count++;
   }
   return count === 0 ? 50 : Math.round(total / count);
@@ -221,11 +237,12 @@ const FEET_TRIPLES: [number, number, number][] = [
  *   - sum of REGION_WEIGHTS === 100
  */
 export function computePoseScore(
-  user: NormalisedLandmarks,
-  reference: NormalisedLandmarks,
-): PoseScore {
-  const uLm = user.landmarks;
-  const rLm = reference.landmarks;
+  user: NormalisedLandmarks | PoseLandmarks | Landmark[],
+  reference: NormalisedLandmarks | PoseLandmarks | Landmark[] | ReferencePoseKey,
+): PoseScore & PoseMatchResult & { overallScore: number; regionalScores: RegionScores; primaryGuidanceCue: string | null } {
+  const uLm = Array.isArray(user) ? user : user.landmarks;
+  const rObj = typeof reference === 'string' ? getReferenceSkeletonForKey(reference as ReferencePoseKey) : reference;
+  const rLm = Array.isArray(rObj) ? rObj : rObj.landmarks;
 
   const shoulders = regionScore(uLm, rLm, SHOULDER_TRIPLES);
   const arms = regionScore(uLm, rLm, ARM_TRIPLES);
@@ -247,10 +264,20 @@ export function computePoseScore(
 
   // Coerce to [SCORE_MIN, SCORE_MAX] — port of Kotlin .coerceIn(15, 98) [Req 11]
   const total = Math.round(Math.max(SCORE_MIN, Math.min(SCORE_MAX, weighted)));
+  const guidanceCue = deriveGuidanceCue(total, user);
+  const isAutoCapture = isAutoCaptureReady(total);
+  const regional: RegionScores = { shoulders, arms, hands, torso, legs, head, feet };
 
   return {
     total,
-    regional: { shoulders, arms, hands, torso, legs, head, feet },
+    score: total,
+    overallScore: total,
+    regional,
+    regionScores: regional,
+    regionalScores: regional,
+    guidanceCue,
+    primaryGuidanceCue: guidanceCue,
+    isAutoCaptureReady: isAutoCapture,
   };
 }
 
@@ -265,19 +292,15 @@ export function computePoseScore(
  * [Req 11, 47.3]
  */
 export function evaluatePose(
-  user: NormalisedLandmarks,
-  reference: NormalisedLandmarks,
+  user: NormalisedLandmarks | PoseLandmarks,
+  reference: NormalisedLandmarks | PoseLandmarks | ReferencePoseKey,
 ): PoseMatchResult {
-  const poseScore = computePoseScore(user, reference);
-  const score = poseScore.total;
-  const guidanceCue = deriveGuidanceCue(score, user);
-  const isAutoCaptureReady = score >= AUTO_CAPTURE_THRESHOLD;
-
+  const result = computePoseScore(user, reference);
   return {
-    score,
-    guidanceCue,
-    isAutoCaptureReady,
-    regionScores: poseScore.regional,
+    score: result.score,
+    guidanceCue: result.guidanceCue,
+    isAutoCaptureReady: result.isAutoCaptureReady,
+    regionScores: result.regionScores,
   };
 }
 
@@ -293,16 +316,22 @@ export function evaluatePose(
  */
 export function deriveGuidanceCue(
   score: number,
-  user: NormalisedLandmarks,
+  user: NormalisedLandmarks | PoseLandmarks | Landmark[],
 ): GuidanceCue | null {
   if (score >= AUTO_CAPTURE_THRESHOLD) return null;
 
-  const lm = user.landmarks;
+  const lm = Array.isArray(user) ? user : user.landmarks;
+  if (!lm || lm.length < 25) return 'Adjusting';
+
   const leftShoulder = lm[LM.LEFT_SHOULDER];
   const rightShoulder = lm[LM.RIGHT_SHOULDER];
   const leftHip = lm[LM.LEFT_HIP];
   const rightHip = lm[LM.RIGHT_HIP];
   const nose = lm[LM.NOSE];
+
+  if (!leftShoulder || !rightShoulder || !leftHip || !rightHip || !nose) {
+    return 'Adjusting';
+  }
 
   // Compute horizontal centre of body (midpoint of hips)
   const hipMidX = (leftHip.x + rightHip.x) / 2;
@@ -357,6 +386,11 @@ export function isAutoCaptureReady(score: number, threshold = AUTO_CAPTURE_THRES
 // Reference skeleton factory
 // ---------------------------------------------------------------------------
 
+export type BuiltReferenceSkeleton = PoseLandmarks & {
+  landmarks: PoseLandmarks;
+  referenceScale: number;
+};
+
 /**
  * Build a plausible normalised reference skeleton for the given pose key.
  * Coordinates are normalised (0–1 range, body-centred).
@@ -364,7 +398,7 @@ export function isAutoCaptureReady(score: number, threshold = AUTO_CAPTURE_THRES
  * These are design-time approximations that will be replaced by real
  * landmark JSON loaded from downloaded pose packs (Task 29/33).
  */
-export function getReferenceSkeletonForKey(key: ReferencePoseKey): NormalisedLandmarks {
+export function getReferenceSkeletonForKey(key: ReferencePoseKey): BuiltReferenceSkeleton {
   switch (key) {
     case 'OVER_SHOULDER':
       return buildOverShoulderSkeleton();
@@ -390,8 +424,15 @@ function lm(x: number, y: number, z = 0, visibility = 1.0): Landmark {
   return { x, y, z, visibility };
 }
 
+function makeSkeleton(landmarks: Landmark[], referenceScale = 0.33): BuiltReferenceSkeleton {
+  const arr = [...landmarks] as BuiltReferenceSkeleton;
+  arr.landmarks = arr as unknown as PoseLandmarks;
+  arr.referenceScale = referenceScale;
+  return arr;
+}
+
 /** Standing-neutral T-pose as a starting template. */
-function buildStandingNeutralSkeleton(): NormalisedLandmarks {
+function buildStandingNeutralSkeleton(): BuiltReferenceSkeleton {
   const landmarks: Landmark[] = [
     /* 0  NOSE             */ lm(0.50, 0.08),
     /* 1  LEFT_EYE_INNER   */ lm(0.47, 0.06),
@@ -427,13 +468,13 @@ function buildStandingNeutralSkeleton(): NormalisedLandmarks {
     /* 31 LEFT_FOOT_INDEX  */ lm(0.39, 0.93),
     /* 32 RIGHT_FOOT_INDEX */ lm(0.61, 0.93),
   ] as Landmark[];
-  return { landmarks: landmarks as NormalisedLandmarks['landmarks'], referenceScale: 0.33 };
+  return makeSkeleton(landmarks, 0.33);
 }
 
 /** Over-shoulder glance: torso slightly turned, head turned to look back. */
-function buildOverShoulderSkeleton(): NormalisedLandmarks {
+function buildOverShoulderSkeleton(): BuiltReferenceSkeleton {
   const base = buildStandingNeutralSkeleton();
-  const lms = [...base.landmarks] as NormalisedLandmarks['landmarks'];
+  const lms = [...base];
   // Turn torso slightly right → shift left shoulder forward
   lms[LM.LEFT_SHOULDER] = lm(0.42, 0.22);
   lms[LM.RIGHT_SHOULDER] = lm(0.64, 0.22);
@@ -444,13 +485,13 @@ function buildOverShoulderSkeleton(): NormalisedLandmarks {
   lms[LM.RIGHT_ELBOW] = lm(0.72, 0.40);
   lms[LM.LEFT_WRIST] = lm(0.28, 0.56);
   lms[LM.RIGHT_WRIST] = lm(0.74, 0.56);
-  return { landmarks: lms, referenceScale: 0.33 };
+  return makeSkeleton(lms, 0.33);
 }
 
 /** Walking casual: mid-stride, arms swung, slight forward lean. */
-function buildWalkingCasualSkeleton(): NormalisedLandmarks {
+function buildWalkingCasualSkeleton(): BuiltReferenceSkeleton {
   const base = buildStandingNeutralSkeleton();
-  const lms = [...base.landmarks] as NormalisedLandmarks['landmarks'];
+  const lms = [...base];
   // Legs in mid-stride
   lms[LM.LEFT_KNEE] = lm(0.38, 0.70);
   lms[LM.RIGHT_KNEE] = lm(0.61, 0.75);
@@ -461,13 +502,13 @@ function buildWalkingCasualSkeleton(): NormalisedLandmarks {
   lms[LM.LEFT_WRIST] = lm(0.30, 0.48);
   lms[LM.RIGHT_ELBOW] = lm(0.70, 0.42);
   lms[LM.RIGHT_WRIST] = lm(0.72, 0.58);
-  return { landmarks: lms, referenceScale: 0.33 };
+  return makeSkeleton(lms, 0.33);
 }
 
 /** Seated cafe: hips high, knees bent at ~90°, torso upright. */
-function buildSeatedCafeSkeleton(): NormalisedLandmarks {
+function buildSeatedCafeSkeleton(): BuiltReferenceSkeleton {
   const base = buildStandingNeutralSkeleton();
-  const lms = [...base.landmarks] as NormalisedLandmarks['landmarks'];
+  const lms = [...base];
   // Raise hips (seated position — hips appear higher in frame)
   lms[LM.LEFT_HIP] = lm(0.40, 0.50);
   lms[LM.RIGHT_HIP] = lm(0.60, 0.50);
@@ -482,13 +523,13 @@ function buildSeatedCafeSkeleton(): NormalisedLandmarks {
   lms[LM.LEFT_WRIST] = lm(0.32, 0.53);
   lms[LM.RIGHT_ELBOW] = lm(0.70, 0.42);
   lms[LM.RIGHT_WRIST] = lm(0.63, 0.56);
-  return { landmarks: lms, referenceScale: 0.30 };
+  return makeSkeleton(lms, 0.30);
 }
 
 /** Mirror selfie: phone arm raised, slight body turn, looking at camera. */
-function buildMirrorSelfieSkeleton(): NormalisedLandmarks {
+function buildMirrorSelfieSkeleton(): BuiltReferenceSkeleton {
   const base = buildStandingNeutralSkeleton();
-  const lms = [...base.landmarks] as NormalisedLandmarks['landmarks'];
+  const lms = [...base];
   // Right arm raised and extended for phone
   lms[LM.RIGHT_ELBOW] = lm(0.78, 0.24);
   lms[LM.RIGHT_WRIST] = lm(0.82, 0.14);
@@ -499,13 +540,13 @@ function buildMirrorSelfieSkeleton(): NormalisedLandmarks {
   // Slight body turn left
   lms[LM.LEFT_SHOULDER] = lm(0.40, 0.22);
   lms[LM.RIGHT_SHOULDER] = lm(0.63, 0.21);
-  return { landmarks: lms, referenceScale: 0.33 };
+  return makeSkeleton(lms, 0.33);
 }
 
 /** Couple embrace: standing close together, arms around each other. */
-function buildCoupleEmbraceSkeleton(): NormalisedLandmarks {
+function buildCoupleEmbraceSkeleton(): BuiltReferenceSkeleton {
   const base = buildStandingNeutralSkeleton();
-  const lms = [...base.landmarks] as NormalisedLandmarks['landmarks'];
+  const lms = [...base];
   // Arms wrapped inward
   lms[LM.LEFT_ELBOW] = lm(0.55, 0.34);
   lms[LM.LEFT_WRIST] = lm(0.65, 0.30);
@@ -513,7 +554,7 @@ function buildCoupleEmbraceSkeleton(): NormalisedLandmarks {
   lms[LM.RIGHT_WRIST] = lm(0.35, 0.30);
   // Head tilted slightly
   lms[LM.NOSE] = lm(0.48, 0.08);
-  return { landmarks: lms, referenceScale: 0.33 };
+  return makeSkeleton(lms, 0.33);
 }
 
 // ---------------------------------------------------------------------------

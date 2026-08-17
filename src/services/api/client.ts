@@ -134,6 +134,12 @@ export async function apiDelete<T>(url: string): Promise<T> {
   return unwrap(res.data);
 }
 
+export const api = {
+  get: apiGet,
+  post: apiPost,
+  delete: apiDelete,
+};
+
 function unwrap<T>(response: ApiResponse<T>): T {
   if (response.success) {
     return response.data;

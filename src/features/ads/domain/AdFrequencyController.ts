@@ -88,7 +88,7 @@ export function canShowAppOpenAd(
  * @param todayDate  Current date as 'YYYY-MM-DD' string.
  */
 export function recordAppOpenAdShown(
-  state: AppOpenAdState,
+  _state: AppOpenAdState,
   todayDate: string,
 ): AppOpenAdState {
   return { lastShownDate: todayDate };

@@ -18,7 +18,7 @@
  */
 
 import React, { useCallback, useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Canvas, Image, Group, useImage } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -28,6 +28,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 
+import { SPIcon } from '@/components/atoms/SPIcon';
 import type { OverlayTransform } from '@/features/camera/types';
 import {
   applyPan,
@@ -260,7 +261,7 @@ export function SPPoseOverlay({
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
           {skiaImage ? (
-            <Canvas style={StyleSheet.absoluteFill} accessibilityHidden>
+            <Canvas style={StyleSheet.absoluteFill} accessibilityElementsHidden>
               <Group>
                 <Image
                   image={skiaImage}
@@ -284,9 +285,7 @@ export function SPPoseOverlay({
           accessibilityRole="image"
           pointerEvents="none"
         >
-          <Text style={styles.lockIcon} accessibilityHidden>
-            🔒
-          </Text>
+          <SPIcon name="lock" size={16} color="#FFFFFF" strokeWidth={2.4} />
         </View>
       )}
     </View>

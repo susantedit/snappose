@@ -9,7 +9,6 @@ import React from 'react';
 import {
   Pressable,
   StyleSheet,
-  View,
   type StyleProp,
   type ViewStyle,
   type PressableProps,

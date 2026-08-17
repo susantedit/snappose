@@ -6,7 +6,7 @@
 import React from 'react';
 import { Text, type StyleProp, type TextStyle } from 'react-native';
 import { useTheme } from '@/constants/theme';
-import { Colors, Typography } from '@/constants/designTokens';
+import { Typography } from '@/constants/designTokens';
 
 export type SPTextVariant =
   | 'heading1'    // 32, bold

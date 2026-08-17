@@ -1,19 +1,16 @@
 /**
- * HomeScreen — port of HomeScreen.kt
+ * HomeScreen — Editorial Photography, Cinematic Motion & Personalized AI Feed for Snap Pose.
  *
  * Features:
- *  • Search bar with 200ms debounced input [Req 4.1, 6.1]
- *  • Horizontally scrollable category chip row — all 23 categories [Req 4.1]
- *  • BlurHash skeleton placeholders while loading [Req 4.2]
- *  • Never blank — always skeleton/shimmer [Req 4.3]
- *  • Offline banner + cached content when no connectivity [Req 4.4]
- *  • Floating circular camera FAB (72 px, Olive Green #65744A) [Req 4.5]
- *  • 60 FPS scroll using FlashList [Req 4.6]
- *  • React Query cache served from MMKV (staleTime 24 h) [Req 4.7]
- *  • Trending / Recommended / Recently Viewed / Editor's Picks sections [Req 4.1]
+ *  • Dynamic "Recommended For You" carousel powered by On-Device Personalization Engine
+ *  • Editorial Explanation Badges ("Because you love mountain poses", "Try something new")
+ *  • Staggered Hero Entrance Sequence with Scroll Parallax
+ *  • Smooth Category Slider with active pill indicator
+ *  • Trending & Editor's Picks horizontal carousels
+ *  • 2-Column masonry pose cards with tactile spring micro-interactions
  */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Dimensions,
   Pressable,
@@ -22,337 +19,95 @@ import {
   Text,
   View,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import Animated, {
   FadeIn,
   FadeInDown,
+  interpolate,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
-  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/constants/theme';
 import {
-  AnimationDurations,
   BorderRadius,
   Colors,
-  Elevation,
   Spacing,
-  Typography,
 } from '@/constants/designTokens';
 
 import { SPPoseCard } from '@/components/molecules/SPPoseCard';
-import { SPSkeletonCard } from '@/components/molecules/SPSkeletonCard';
-import { SPSearchBar } from '@/components/molecules/SPSearchBar';
 import { SPToast, useToast } from '@/components/molecules/SPToast';
+import { SPIcon } from '@/components/atoms/SPIcon';
+import { AnimatedPressable } from '@/components/motion/AnimatedPressable';
+import { MotionEasings, useReducedMotion } from '@/constants/motion';
+import { useFavorites } from '@/features/favorites/hooks/useFavorites';
+import { usePersonalizationStore } from '@/stores/personalizationStore';
+import { SNAP_POSE_CATEGORIES, SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
+import type { ScoredRecommendation } from '@/features/personalization';
 
-import {
-  useEditorsPicks,
-  useRecommended,
-  useTrending,
-  getRecentlyViewed,
-  addToRecentlyViewed,
-} from '@/features/poses/hooks/useHomeData';
-import { useOnlineStatus } from '@/hooks/useOnlineStatus';
-import type { Pose } from '@/features/poses/types';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const CARD_GAP = 10;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HORIZONTAL_PADDING = Spacing.md;
-const COLUMN_COUNT = 2;
-const CARD_WIDTH =
-  (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - CARD_GAP * (COLUMN_COUNT - 1)) / COLUMN_COUNT;
-
-const SECTION_SKELETON_COUNT = 4;
-const FAB_SIZE = 72;
-
-export const ALL_CATEGORIES = [
-  { id: 'beach', name: 'Beach', emoji: '🏖' },
-  { id: 'cafe', name: 'Cafe', emoji: '☕' },
-  { id: 'mountain', name: 'Mountain', emoji: '⛰' },
-  { id: 'nature', name: 'Nature', emoji: '🌿' },
-  { id: 'wedding', name: 'Wedding', emoji: '💍' },
-  { id: 'festival', name: 'Festival', emoji: '🎉' },
-  { id: 'friends', name: 'Friends', emoji: '👫' },
-  { id: 'couple', name: 'Couple', emoji: '💑' },
-  { id: 'solo', name: 'Solo', emoji: '🧍' },
-  { id: 'selfie', name: 'Selfie', emoji: '🤳' },
-  { id: 'luxury', name: 'Luxury', emoji: '💎' },
-  { id: 'car', name: 'Car', emoji: '🚗' },
-  { id: 'bike', name: 'Bike', emoji: '🚴' },
-  { id: 'gym', name: 'Gym', emoji: '🏋' },
-  { id: 'office', name: 'Office', emoji: '💼' },
-  { id: 'traditional', name: 'Traditional', emoji: '👘' },
-  { id: 'fashion', name: 'Fashion', emoji: '👗' },
-  { id: 'camping', name: 'Camping', emoji: '⛺' },
-  { id: 'forest', name: 'Forest', emoji: '🌲' },
-  { id: 'snow', name: 'Snow', emoji: '❄' },
-  { id: 'golden-hour', name: 'Golden Hour', emoji: '🌅' },
-  { id: 'night', name: 'Night', emoji: '🌙' },
-  { id: 'travel', name: 'Travel', emoji: '✈' },
-] as const;
+const CARD_GAP = 12;
+const CARD_WIDTH = (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
 
 // ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-/** Offline banner shown at top when connectivity lost */
-function OfflineBanner() {
-  return (
-    <Animated.View entering={FadeIn.duration(AnimationDurations.medium)} style={styles.offlineBanner}>
-      <Text style={styles.offlineIcon}>📡</Text>
-      <Text style={styles.offlineText}>You're offline — showing cached content</Text>
-    </Animated.View>
-  );
-}
-
-/** Section header with optional "See all" link */
-function SectionHeader({
-  title,
-  onSeeAll,
-  isDark,
-}: {
-  title: string;
-  onSeeAll?: () => void;
-  isDark: boolean;
-}) {
-  return (
-    <View style={styles.sectionHeader}>
-      <Text style={[styles.sectionTitle, { color: isDark ? '#FFFFFF' : Colors.textPrimary }]}>
-        {title}
-      </Text>
-      {onSeeAll && (
-        <Pressable
-          onPress={onSeeAll}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={`See all ${title}`}
-        >
-          <Text style={styles.seeAll}>See all</Text>
-        </Pressable>
-      )}
-    </View>
-  );
-}
-
-/** Horizontal scrollable row of skeleton cards */
-function HorizontalSkeletonRow() {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.horizontalListContent}
-      scrollEventThrottle={16}
-    >
-      {Array.from({ length: SECTION_SKELETON_COUNT }, (_, i) => (
-        <SPSkeletonCard
-          key={i}
-          variant="pose"
-          width={CARD_WIDTH}
-          height={240}
-          style={i > 0 ? { marginLeft: CARD_GAP } : undefined}
-        />
-      ))}
-    </ScrollView>
-  );
-}
-
-/** Horizontal pose card row */
-function HorizontalPoseRow({
-  poses,
-  onPosePress,
-  onFavoritePress,
-  onCameraPress,
-}: {
-  poses: Pose[];
-  onPosePress: (id: string) => void;
-  onFavoritePress: (id: string) => void;
-  onCameraPress: (id: string) => void;
-}) {
-  return (
-    <FlashList
-      data={poses}
-      horizontal
-      estimatedItemSize={CARD_WIDTH}
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.horizontalListContent}
-      keyExtractor={(item) => item.id}
-      renderItem={({ item, index }) => (
-        <SPPoseCard
-          id={item.id}
-          name={item.title}
-          category={item.categoryId}
-          imageUri={item.imageUrl}
-          difficulty={item.difficulty}
-          width={CARD_WIDTH}
-          height={240}
-          onPress={onPosePress}
-          onFavoritePress={onFavoritePress}
-          onCameraPress={onCameraPress}
-          style={index > 0 ? { marginLeft: CARD_GAP } : undefined}
-        />
-      )}
-    />
-  );
-}
-
-/** Masonry 2-column pose grid section */
-function PoseGrid({
-  poses,
-  onPosePress,
-  onFavoritePress,
-  onCameraPress,
-}: {
-  poses: Pose[];
-  onPosePress: (id: string) => void;
-  onFavoritePress: (id: string) => void;
-  onCameraPress: (id: string) => void;
-}) {
-  // Split into two columns manually for masonry-style layout
-  const left: Pose[] = [];
-  const right: Pose[] = [];
-  poses.forEach((p, i) => {
-    if (i % 2 === 0) left.push(p);
-    else right.push(p);
-  });
-
-  const renderColumn = (items: Pose[]) =>
-    items.map((item) => (
-      <SPPoseCard
-        key={item.id}
-        id={item.id}
-        name={item.title}
-        category={item.categoryId}
-        imageUri={item.imageUrl}
-        difficulty={item.difficulty}
-        width={CARD_WIDTH}
-        onPress={onPosePress}
-        onFavoritePress={onFavoritePress}
-        onCameraPress={onCameraPress}
-        style={styles.gridCard}
-      />
-    ));
-
-  return (
-    <View style={[styles.gridContainer, { paddingHorizontal: HORIZONTAL_PADDING }]}>
-      <View style={styles.gridColumn}>{renderColumn(left)}</View>
-      <View style={[styles.gridColumn, { marginLeft: CARD_GAP }]}>{renderColumn(right)}</View>
-    </View>
-  );
-}
-
-/** Skeleton masonry grid for loading state */
-function SkeletonGrid({ count = 4 }: { count?: number }) {
-  const left = Array.from({ length: Math.ceil(count / 2) }, (_, i) => i * 2);
-  const right = Array.from({ length: Math.floor(count / 2) }, (_, i) => i * 2 + 1);
-
-  return (
-    <View style={[styles.gridContainer, { paddingHorizontal: HORIZONTAL_PADDING }]}>
-      <View style={styles.gridColumn}>
-        {left.map((i) => (
-          <SPSkeletonCard key={i} variant="pose" width={CARD_WIDTH} style={styles.gridCard} />
-        ))}
-      </View>
-      <View style={[styles.gridColumn, { marginLeft: CARD_GAP }]}>
-        {right.map((i) => (
-          <SPSkeletonCard key={i} variant="pose" width={CARD_WIDTH} style={styles.gridCard} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Category chip
+// Category Chip Component
 // ---------------------------------------------------------------------------
 
 interface CategoryChipProps {
   id: string;
   name: string;
-  emoji: string;
-  selected: boolean;
-  onPress: (id: string) => void;
-  isDark: boolean;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
 }
 
-function CategoryChip({ id, name, emoji, selected, onPress, isDark }: CategoryChipProps) {
-  const scale = useSharedValue(1);
+function CategoryChip({ id, name, isSelected, onSelect }: CategoryChipProps) {
+  const { theme } = useTheme();
+  const isDark = theme.mode === 'dark';
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withTiming(0.94, { duration: AnimationDurations.quick });
-  };
-  const handlePressOut = () => {
-    scale.value = withTiming(1, { duration: AnimationDurations.quick });
-  };
-
-  const bgColor = selected
-    ? Colors.olive
-    : isDark
-    ? '#2A2A2A'
-    : '#FFFFFF';
-  const textColor = selected ? '#FFFFFF' : isDark ? '#CCCCCC' : Colors.textSecondary;
-  const borderColor = selected ? Colors.olive : isDark ? Colors.borderDark : Colors.border;
+  const iconColor = isSelected ? '#FFFFFF' : isDark ? '#DDD' : Colors.textPrimary;
 
   return (
-    <Animated.View style={animatedStyle}>
-      <Pressable
-        onPress={() => onPress(id)}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={[styles.chip, { backgroundColor: bgColor, borderColor }]}
-        accessibilityRole="button"
-        accessibilityLabel={`${name} category`}
-        accessibilityState={{ selected }}
-      >
-        <Text style={styles.chipEmoji}>{emoji}</Text>
-        <Text style={[styles.chipText, { color: textColor }]}>{name}</Text>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Floating Action Button
-// ---------------------------------------------------------------------------
-
-function CameraFAB({ onPress }: { onPress: () => void }) {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Animated.View
-      style={[styles.fabContainer, animatedStyle]}
-      entering={FadeInDown.delay(300).duration(AnimationDurations.medium)}
+    <AnimatedPressable
+      onPress={() => onSelect(id)}
+      scaleTo={0.93}
+      hapticFeedback="selection"
+      accessibilityRole="button"
+      accessibilityLabel={`Filter by category ${name}`}
+      accessibilityState={{ selected: isSelected }}
+      style={[
+        styles.chip,
+        isSelected
+          ? {
+              backgroundColor: Colors.olive,
+              borderColor: Colors.darkAccent,
+              elevation: 4,
+              shadowColor: Colors.olive,
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.35,
+              shadowRadius: 6,
+            }
+          : {
+              backgroundColor: isDark ? '#242424' : '#EFE9DC',
+              borderColor: isDark ? '#383838' : '#DFD7C7',
+            },
+      ]}
     >
-      <Pressable
-        onPress={onPress}
-        onPressIn={() => {
-          scale.value = withTiming(0.9, { duration: AnimationDurations.quick });
-        }}
-        onPressOut={() => {
-          scale.value = withTiming(1, { duration: AnimationDurations.quick });
-        }}
-        style={styles.fab}
-        accessibilityRole="button"
-        accessibilityLabel="Open camera"
-        accessibilityHint="Opens the camera to capture a pose"
+      <SPIcon name={id} size={15} color={iconColor} strokeWidth={2.2} />
+      <Text
+        style={[
+          styles.chipLabel,
+          {
+            color: isSelected ? '#FFFFFF' : isDark ? '#DDD' : Colors.textPrimary,
+            fontWeight: isSelected ? '700' : '500',
+          },
+        ]}
       >
-        <Text style={styles.fabIcon}>📷</Text>
-      </Pressable>
-    </Animated.View>
+        {name}
+      </Text>
+    </AnimatedPressable>
   );
 }
 
@@ -361,307 +116,525 @@ function CameraFAB({ onPress }: { onPress: () => void }) {
 // ---------------------------------------------------------------------------
 
 export default function HomeScreen() {
-  const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const isDark = theme.mode === 'dark';
-  const isOnline = useOnlineStatus();
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-
+  const { theme } = useTheme();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const { toastProps, showToast } = useToast();
+  const reduceMotion = useReducedMotion();
 
+  // Personalization Engine Store
   const {
-    data: trendingPoses,
-    isLoading: trendingLoading,
-    isError: trendingError,
-  } = useTrending();
+    getRecommendedPoses,
+    recordSignal,
+    isPersonalizationEnabled,
+    outfitPreference,
+  } = usePersonalizationStore();
 
-  const {
-    data: recommendedPoses,
-    isLoading: recommendedLoading,
-    isError: recommendedError,
-  } = useRecommended();
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  const {
-    data: editorsPicks,
-    isLoading: editorsLoading,
-    isError: editorsError,
-  } = useEditorsPicks();
+  // Parallax Scroll Tracking
+  const scrollY = useSharedValue(0);
 
-  // Recently viewed — read from MMKV
-  const recentlyViewed = useMemo(() => getRecentlyViewed(), []);
-
-  // Filtered poses for search
-  const filteredPoses = useMemo<Pose[]>(() => {
-    const allPoses = [
-      ...(trendingPoses ?? []),
-      ...(recommendedPoses ?? []),
-      ...(editorsPicks ?? []),
-    ];
-    const unique = allPoses.filter(
-      (pose, index, self) => self.findIndex((p) => p.id === pose.id) === index,
-    );
-
-    if (!searchQuery.trim() && !selectedCategory) return [];
-
-    return unique.filter((pose) => {
-      const matchesSearch =
-        !searchQuery.trim() ||
-        pose.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        pose.categoryId.toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchesCategory =
-        !selectedCategory || pose.categoryId === selectedCategory;
-
-      return matchesSearch && matchesCategory;
-    });
-  }, [searchQuery, selectedCategory, trendingPoses, recommendedPoses, editorsPicks]);
-
-  const isSearching = searchQuery.trim().length > 0 || selectedCategory !== null;
-  const isAnyLoading = trendingLoading || recommendedLoading || editorsLoading;
-
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
-
-  const handlePosePress = useCallback(
-    (id: string) => {
-      // Track recently viewed
-      const allPoses = [
-        ...(trendingPoses ?? []),
-        ...(recommendedPoses ?? []),
-        ...(editorsPicks ?? []),
-      ];
-      const pose = allPoses.find((p) => p.id === id);
-      if (pose) addToRecentlyViewed(pose);
-      router.push(`/pose/${id}`);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
     },
-    [trendingPoses, recommendedPoses, editorsPicks],
-  );
+  });
 
-  const handleFavoritePress = useCallback(
-    (id: string) => {
-      showToast({ message: 'Added to favorites', variant: 'success', description: undefined });
-    },
-    [showToast],
-  );
+  const heroParallaxStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return {};
+    return {
+      transform: [
+        { translateY: scrollY.value * 0.15 },
+        { scale: interpolate(scrollY.value, [-100, 0, 200], [1.12, 1.0, 0.95], 'clamp') },
+      ],
+    };
+  });
 
-  const handleCameraPress = useCallback((id: string) => {
-    router.push('/(tabs)/camera');
-  }, []);
+  const heroTextParallaxStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return {};
+    return {
+      transform: [{ translateY: scrollY.value * 0.05 }],
+      opacity: interpolate(scrollY.value, [0, 180], [1, 0.4], 'clamp'),
+    };
+  });
 
-  const handleCategoryPress = useCallback((id: string) => {
-    setSelectedCategory((prev) => (prev === id ? null : id));
-    if (searchQuery.trim() === '') {
-      router.push(`/category/${id}`);
+  // Filtered poses based on selected category
+  const filteredPoses = useMemo(() => {
+    if (selectedCategory === 'all') {
+      return SNAP_POSE_DATASET;
     }
-  }, [searchQuery]);
+    return SNAP_POSE_DATASET.filter((p) => p.categoryId === selectedCategory);
+  }, [selectedCategory]);
 
-  const handleSearchDebounced = useCallback((text: string) => {
-    setSearchQuery(text);
-  }, []);
+  // Compute Personalized Recommendations
+  const personalizedRecommendations = useMemo<ScoredRecommendation[]>(() => {
+    return getRecommendedPoses(
+      SNAP_POSE_DATASET,
+      {
+        currentCategory: selectedCategory !== 'all' ? selectedCategory : undefined,
+        outfitCategory: outfitPreference,
+      },
+      8,
+    );
+  }, [getRecommendedPoses, selectedCategory, outfitPreference]);
 
-  const handleOpenCamera = useCallback(() => {
-    router.push('/(tabs)/camera');
-  }, []);
+  const trendingPoses = useMemo(() => SNAP_POSE_DATASET.slice(0, 6), []);
+  const editorsPicks = useMemo(() => SNAP_POSE_DATASET.slice(6, 12), []);
 
-  const bg = isDark ? Colors.dark : Colors.cream;
+  const handleOpenPose = useCallback(
+    (id: string, isFromRec = false) => {
+      recordSignal({
+        type: isFromRec ? 'RECOMMENDATION_CLICKED' : 'POSE_OPENED',
+        poseId: id,
+      });
+      router.push({
+        pathname: '/pose/[id]',
+        params: { id },
+      });
+    },
+    [recordSignal],
+  );
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  const handleTryPose = useCallback(
+    (id: string) => {
+      recordSignal({
+        type: 'POSE_USED',
+        poseId: id,
+      });
+      router.push({
+        pathname: '/(tabs)/camera',
+        params: { poseId: id },
+      });
+    },
+    [recordSignal],
+  );
+
+  const handleToggleFavorite = useCallback(
+    (poseId: string) => {
+      const pose = SNAP_POSE_DATASET.find((p) => p.id === poseId);
+      if (pose) {
+        const wasFav = isFavorite(poseId);
+        toggleFavorite(pose);
+        recordSignal({
+          type: wasFav ? 'POSE_UNFAVORITED' : 'POSE_FAVORITED',
+          poseId: pose.id,
+          categoryId: pose.categoryId,
+        });
+        showToast({
+          message: wasFav ? 'Removed from favorites' : 'Saved to favorites',
+          variant: wasFav ? 'info' : 'success',
+        });
+      }
+    },
+    [isFavorite, toggleFavorite, recordSignal, showToast],
+  );
+
+  const isDark = theme.mode === 'dark';
 
   return (
-    <View style={[styles.root, { backgroundColor: bg }]}>
-      {/* Offline banner */}
-      {!isOnline && <OfflineBanner />}
-
-      <ScrollView
-        style={styles.scroll}
+    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+      <Animated.ScrollView
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + Spacing.xs, paddingBottom: insets.bottom + FAB_SIZE + 24 },
+          {
+            paddingTop: insets.top + Spacing.sm,
+            paddingBottom: insets.bottom + 90,
+          },
         ]}
-        showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
       >
-        {/* ── Header ── */}
-        <View style={[styles.header, { paddingHorizontal: HORIZONTAL_PADDING }]}>
-          <View>
-            <Text style={[styles.greeting, { color: isDark ? '#AAAAAA' : Colors.textSecondary }]}>
-              Good day 👋
-            </Text>
-            <Text style={[styles.appTitle, { color: isDark ? '#FFFFFF' : Colors.textPrimary }]}>
-              Snap Pose
-            </Text>
-          </View>
-        </View>
-
-        {/* ── Search bar ── */}
-        <View style={{ paddingHorizontal: HORIZONTAL_PADDING, marginBottom: Spacing.md }}>
-          <SPSearchBar
-            placeholder="Search poses, categories…"
-            onDebouncedChange={handleSearchDebounced}
-            debounceMs={200}
-          />
-        </View>
-
-        {/* ── Category chips ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryRow}
-          scrollEventThrottle={16}
-          style={{ marginBottom: Spacing.lg }}
+        {/* ── 1. Top Header ────────────────────────────────────────────── */}
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeIn.duration(400)}
+          style={styles.header}
         >
-          {ALL_CATEGORIES.map((cat) => (
-            <CategoryChip
-              key={cat.id}
-              id={cat.id}
-              name={cat.name}
-              emoji={cat.emoji}
-              selected={selectedCategory === cat.id}
-              onPress={handleCategoryPress}
-              isDark={isDark}
-            />
-          ))}
-        </ScrollView>
-
-        {/* ── Search results ── */}
-        {isSearching && (
-          <View>
-            <SectionHeader
-              title={
-                filteredPoses.length > 0
-                  ? `Results (${filteredPoses.length})`
-                  : 'No results found'
-              }
-              isDark={isDark}
-            />
-            {isAnyLoading ? (
-              <SkeletonGrid count={4} />
-            ) : filteredPoses.length > 0 ? (
-              <PoseGrid
-                poses={filteredPoses}
-                onPosePress={handlePosePress}
-                onFavoritePress={handleFavoritePress}
-                onCameraPress={handleCameraPress}
-              />
-            ) : (
-              <Animated.View entering={FadeIn} style={styles.emptyState}>
-                <Text style={styles.emptyIcon}>🔍</Text>
-                <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : Colors.textPrimary }]}>
-                  No poses found
-                </Text>
-                <Text style={[styles.emptySubtitle, { color: isDark ? '#AAAAAA' : Colors.textSecondary }]}>
-                  Try a different keyword or explore categories
-                </Text>
-              </Animated.View>
-            )}
-          </View>
-        )}
-
-        {/* ── Default feed (non-search) ── */}
-        {!isSearching && (
-          <>
-            {/* Trending section */}
-            <SectionHeader
-              title="🔥 Trending"
-              onSeeAll={() => router.push('/category/trending' as any)}
-              isDark={isDark}
-            />
-            {trendingLoading ? (
-              <HorizontalSkeletonRow />
-            ) : trendingError ? (
-              <SectionError message="Couldn't load trending poses" isDark={isDark} />
-            ) : (
-              <HorizontalPoseRow
-                poses={trendingPoses ?? []}
-                onPosePress={handlePosePress}
-                onFavoritePress={handleFavoritePress}
-                onCameraPress={handleCameraPress}
-              />
-            )}
-
-            {/* Recommended section */}
-            <View style={{ marginTop: Spacing.xl }}>
-              <SectionHeader
-                title="✨ Recommended"
-                onSeeAll={() => router.push('/category/recommended' as any)}
-                isDark={isDark}
-              />
-              {recommendedLoading ? (
-                <HorizontalSkeletonRow />
-              ) : recommendedError ? (
-                <SectionError message="Couldn't load recommendations" isDark={isDark} />
-              ) : (
-                <HorizontalPoseRow
-                  poses={recommendedPoses ?? []}
-                  onPosePress={handlePosePress}
-                  onFavoritePress={handleFavoritePress}
-                  onCameraPress={handleCameraPress}
-                />
-              )}
-            </View>
-
-            {/* Recently Viewed section */}
-            {recentlyViewed.length > 0 && (
-              <View style={{ marginTop: Spacing.xl }}>
-                <SectionHeader title="🕐 Recently Viewed" isDark={isDark} />
-                <HorizontalPoseRow
-                  poses={recentlyViewed}
-                  onPosePress={handlePosePress}
-                  onFavoritePress={handleFavoritePress}
-                  onCameraPress={handleCameraPress}
-                />
+          <View style={styles.headerTitleContainer}>
+            <View style={styles.brandRow}>
+              <View style={styles.logoBadge}>
+                <SPIcon name="camera" size={17} color="#FFFFFF" strokeWidth={2.4} />
               </View>
-            )}
+              <Text
+                style={[
+                  styles.brandName,
+                  { color: isDark ? '#FFF' : Colors.textPrimary },
+                ]}
+              >
+                Snap Pose
+              </Text>
+            </View>
+            <Text style={[styles.subtitle, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
+              Find your perfect pose.
+            </Text>
+          </View>
 
-            {/* Editor's Picks section */}
-            <View style={{ marginTop: Spacing.xl, marginBottom: Spacing.sm }}>
-              <SectionHeader
-                title="🎨 Editor's Picks"
-                onSeeAll={() => router.push('/category/editors-picks' as any)}
-                isDark={isDark}
+          {/* Quick Header Actions */}
+          <View style={styles.headerActions}>
+            <AnimatedPressable
+              onPress={() => router.push('/gallery')}
+              scaleTo={0.9}
+              style={[
+                styles.headerIconButton,
+                { backgroundColor: isDark ? '#242424' : '#EFE9DC' },
+              ]}
+              accessibilityLabel="View photo gallery"
+            >
+              <SPIcon
+                name="gallery"
+                size={18}
+                color={isDark ? '#FFF' : Colors.textPrimary}
+                strokeWidth={2}
               />
-              {editorsLoading ? (
-                <SkeletonGrid count={4} />
-              ) : editorsError ? (
-                <SectionError message="Couldn't load editor's picks" isDark={isDark} />
-              ) : (
-                <PoseGrid
-                  poses={editorsPicks ?? []}
-                  onPosePress={handlePosePress}
-                  onFavoritePress={handleFavoritePress}
-                  onCameraPress={handleCameraPress}
-                />
+            </AnimatedPressable>
+            <AnimatedPressable
+              onPress={() => router.push('/(tabs)/settings')}
+              scaleTo={0.9}
+              style={[
+                styles.headerIconButton,
+                { backgroundColor: isDark ? '#242424' : '#EFE9DC' },
+              ]}
+              accessibilityLabel="Open settings"
+            >
+              <SPIcon
+                name="settings"
+                size={18}
+                color={isDark ? '#FFF' : Colors.textPrimary}
+                strokeWidth={2}
+              />
+            </AnimatedPressable>
+          </View>
+        </Animated.View>
+
+        {/* ── 2. Cinematic Hero Section with Scroll Parallax ───────────── */}
+        <Animated.View
+          entering={
+            reduceMotion
+              ? undefined
+              : FadeInDown.duration(600).easing(MotionEasings.outStandard)
+          }
+          style={styles.heroCardContainer}
+        >
+          <View style={styles.heroCard}>
+            {/* Parallax Background image */}
+            <Animated.Image
+              source={{
+                uri: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=900&auto=format&fit=crop&q=80',
+              }}
+              style={[styles.heroBackground, heroParallaxStyle]}
+              resizeMode="cover"
+            />
+            <View style={styles.heroGradientOverlay} />
+
+            {/* Parallax Typography & Action CTAs */}
+            <Animated.View style={[styles.heroContent, heroTextParallaxStyle]}>
+              <Animated.View
+                entering={
+                  reduceMotion
+                    ? undefined
+                    : FadeInDown.duration(400).delay(150).springify()
+                }
+                style={styles.heroTag}
+              >
+                <SPIcon name="sparkles" size={11} color="#FFFFFF" strokeWidth={2.4} />
+                <Text style={styles.heroTagText}>POSE IT. SNAP IT. SHARE IT.</Text>
+              </Animated.View>
+
+              <Animated.Text
+                entering={
+                  reduceMotion
+                    ? undefined
+                    : FadeInDown.duration(450).delay(250).springify()
+                }
+                style={styles.heroTitle}
+              >
+                Ready to pose?
+              </Animated.Text>
+
+              <Animated.Text
+                entering={
+                  reduceMotion
+                    ? undefined
+                    : FadeInDown.duration(450).delay(350).springify()
+                }
+                style={styles.heroSubtitle}
+              >
+                Discover poses that make every shot look effortless with on-device AI guidance.
+              </Animated.Text>
+
+              <View style={styles.heroButtonsRow}>
+                <AnimatedPressable
+                  onPress={() => setSelectedCategory('all')}
+                  scaleTo={0.95}
+                  hapticFeedback="medium"
+                  style={styles.heroPrimaryButton}
+                  accessibilityLabel="Explore Poses"
+                >
+                  <Text style={styles.heroPrimaryButtonText}>EXPLORE POSES →</Text>
+                </AnimatedPressable>
+
+                <AnimatedPressable
+                  onPress={() => router.navigate('/(tabs)/camera')}
+                  scaleTo={0.95}
+                  hapticFeedback="medium"
+                  style={styles.heroSecondaryButton}
+                  accessibilityLabel="Open Camera"
+                >
+                  <SPIcon name="camera" size={15} color="#FFFFFF" strokeWidth={2.2} />
+                  <Text style={styles.heroSecondaryButtonText}>OPEN CAMERA</Text>
+                </AnimatedPressable>
+              </View>
+            </Animated.View>
+          </View>
+        </Animated.View>
+
+        {/* ── 3. Personalized "Recommended For You" Feed ─────────────── */}
+        {selectedCategory === 'all' && (
+          <Animated.View
+            entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(180)}
+            style={styles.horizontalSection}
+          >
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionTitleWithIcon}>
+                <SPIcon name="ai" size={19} color={Colors.olive} strokeWidth={2.2} />
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: isDark ? '#FFF' : Colors.textPrimary },
+                  ]}
+                >
+                  {isPersonalizationEnabled ? 'Recommended for You' : 'Popular Poses'}
+                </Text>
+              </View>
+              {isPersonalizationEnabled && (
+                <View style={styles.aiBadgePill}>
+                  <Text style={styles.aiBadgePillText}>ON-DEVICE AI</Text>
+                </View>
               )}
             </View>
-          </>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalCardScroll}
+              decelerationRate="fast"
+            >
+              {personalizedRecommendations.map((rec) => (
+                <View key={`rec-${rec.pose.id}`} style={{ width: 185, marginRight: 14 }}>
+                  {/* Human-Readable Explanation Tag */}
+                  <View style={styles.explanationBadge}>
+                    <Text style={styles.explanationText} numberOfLines={1}>
+                      {rec.explanation}
+                    </Text>
+                  </View>
+                  <SPPoseCard
+                    id={rec.pose.id}
+                    name={rec.pose.title}
+                    category={rec.pose.category ?? rec.pose.categoryId}
+                    imageUri={rec.pose.imageUrl}
+                    difficulty={rec.pose.difficulty}
+                    isFavorite={isFavorite(rec.pose.id)}
+                    width={185}
+                    height={235}
+                    onPress={(id) => handleOpenPose(id, true)}
+                    onFavoritePress={handleToggleFavorite}
+                    onCameraPress={handleTryPose}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </Animated.View>
         )}
-      </ScrollView>
 
-      {/* ── Floating Camera FAB ── */}
-      <CameraFAB onPress={handleOpenCamera} />
+        {/* ── 4. Category Filter Chips ─────────────────────────────────── */}
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(220)}
+          style={[styles.categoriesSection, { marginTop: Spacing.md }]}
+        >
+          <View style={styles.sectionHeaderRow}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: isDark ? '#FFF' : Colors.textPrimary },
+              ]}
+            >
+              Categories
+            </Text>
+            <Pressable onPress={() => router.push('/(tabs)/search')}>
+              <Text style={[styles.seeAllText, { color: Colors.olive }]}>
+                Search all →
+              </Text>
+            </Pressable>
+          </View>
 
-      {/* ── Toast ── */}
-      <SPToast {...toastProps} position="bottom" />
-    </View>
-  );
-}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryScroll}
+          >
+            {SNAP_POSE_CATEGORIES.map((cat) => (
+              <CategoryChip
+                key={cat.id}
+                id={cat.id}
+                name={cat.name}
+                isSelected={selectedCategory === cat.id}
+                onSelect={(id) => {
+                  setSelectedCategory(id);
+                  recordSignal({
+                    type: 'CATEGORY_OPENED',
+                    categoryId: id,
+                  });
+                }}
+              />
+            ))}
+          </ScrollView>
+        </Animated.View>
 
-// ---------------------------------------------------------------------------
-// Section error state
-// ---------------------------------------------------------------------------
+        {/* ── 5. Main Poses Grid (Category filtered or Featured) ──────── */}
+        <View style={styles.posesSection}>
+          <View style={styles.sectionHeaderRow}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: isDark ? '#FFF' : Colors.textPrimary },
+              ]}
+            >
+              {selectedCategory === 'all'
+                ? 'Curated Collection'
+                : `${SNAP_POSE_CATEGORIES.find((c) => c.id === selectedCategory)?.name ?? ''} Poses`}
+            </Text>
+            <Text style={[styles.poseCountBadge, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
+              {filteredPoses.length} {filteredPoses.length === 1 ? 'idea' : 'ideas'}
+            </Text>
+          </View>
 
-function SectionError({ message, isDark }: { message: string; isDark: boolean }) {
-  return (
-    <View style={styles.sectionError}>
-      <Text style={styles.errorIcon}>⚠️</Text>
-      <Text style={[styles.errorText, { color: isDark ? '#AAAAAA' : Colors.textSecondary }]}>
-        {message}
-      </Text>
+          <View style={styles.posesGrid}>
+            {filteredPoses.map((pose, index) => (
+              <Animated.View
+                key={pose.id}
+                entering={
+                  reduceMotion
+                    ? undefined
+                    : FadeInDown.duration(380)
+                        .delay(Math.min(index * 40, 400))
+                        .springify()
+                }
+                style={{ width: CARD_WIDTH }}
+              >
+                <SPPoseCard
+                  id={pose.id}
+                  name={pose.title}
+                  category={pose.category ?? pose.categoryId}
+                  imageUri={pose.imageUrl}
+                  difficulty={pose.difficulty}
+                  isFavorite={isFavorite(pose.id)}
+                  width={CARD_WIDTH}
+                  height={CARD_WIDTH * 1.35}
+                  onPress={(id) => handleOpenPose(id, false)}
+                  onFavoritePress={handleToggleFavorite}
+                  onCameraPress={handleTryPose}
+                />
+              </Animated.View>
+            ))}
+          </View>
+        </View>
+
+        {/* ── 6. Trending Section with Center-Scale Carousel ─────────── */}
+        {selectedCategory === 'all' && (
+          <Animated.View
+            entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(250)}
+            style={styles.horizontalSection}
+          >
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionTitleWithIcon}>
+                <SPIcon name="trending" size={19} color={Colors.error} strokeWidth={2.2} />
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: isDark ? '#FFF' : Colors.textPrimary },
+                  ]}
+                >
+                  Trending Now
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalCardScroll}
+              decelerationRate="fast"
+            >
+              {trendingPoses.map((pose) => (
+                <View key={`trend-${pose.id}`} style={{ width: 175, marginRight: 14 }}>
+                  <SPPoseCard
+                    id={pose.id}
+                    name={pose.title}
+                    category={pose.category ?? pose.categoryId}
+                    imageUri={pose.imageUrl}
+                    difficulty={pose.difficulty}
+                    isFavorite={isFavorite(pose.id)}
+                    width={175}
+                    height={230}
+                    onPress={(id) => handleOpenPose(id, false)}
+                    onFavoritePress={handleToggleFavorite}
+                    onCameraPress={handleTryPose}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </Animated.View>
+        )}
+
+        {/* ── 7. Editor's Selection Section ────────────────────────────── */}
+        {selectedCategory === 'all' && (
+          <Animated.View
+            entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(300)}
+            style={[styles.horizontalSection, { marginTop: Spacing.xl }]}
+          >
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionTitleWithIcon}>
+                <SPIcon name="editors" size={19} color={Colors.warning} strokeWidth={2.2} />
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: isDark ? '#FFF' : Colors.textPrimary },
+                  ]}
+                >
+                  Editor's Selection
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalCardScroll}
+            >
+              {editorsPicks.map((pose) => (
+                <View key={`edit-${pose.id}`} style={{ width: 175, marginRight: 14 }}>
+                  <SPPoseCard
+                    id={pose.id}
+                    name={pose.title}
+                    category={pose.category ?? pose.categoryId}
+                    imageUri={pose.imageUrl}
+                    difficulty={pose.difficulty}
+                    isFavorite={isFavorite(pose.id)}
+                    width={175}
+                    height={230}
+                    onPress={(id) => handleOpenPose(id, false)}
+                    onFavoritePress={handleToggleFavorite}
+                    onCameraPress={handleTryPose}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </Animated.View>
+        )}
+      </Animated.ScrollView>
+
+      <SPToast {...toastProps} />
     </View>
   );
 }
@@ -674,153 +647,245 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  offlineBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.warning,
-    paddingHorizontal: HORIZONTAL_PADDING,
-    paddingVertical: Spacing.xs,
-    gap: Spacing.xs,
-    zIndex: 100,
-  },
-  offlineIcon: {
-    fontSize: 14,
-  },
-  offlineText: {
-    fontSize: Typography.sizes.caption,
-    fontWeight: Typography.weights.medium as '500',
-    color: '#1A1200',
-    flex: 1,
-  },
-  scroll: {
-    flex: 1,
-  },
   scrollContent: {
-    flexGrow: 1,
+    paddingHorizontal: HORIZONTAL_PADDING,
   },
+
+  // Header
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: Spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
   },
-  greeting: {
-    fontSize: Typography.sizes.caption,
-    fontWeight: Typography.weights.regular as '400',
-    marginBottom: 2,
-  },
-  appTitle: {
-    fontSize: Typography.sizes.h3,
-    fontWeight: Typography.weights.bold as '700',
-    letterSpacing: -0.5,
-  },
-  categoryRow: {
-    paddingHorizontal: HORIZONTAL_PADDING,
-    gap: Spacing.xs,
-    paddingRight: HORIZONTAL_PADDING + Spacing.xs,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    gap: 5,
-    minHeight: 36,
-  },
-  chipEmoji: {
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  chipText: {
-    fontSize: Typography.sizes.caption,
-    fontWeight: Typography.weights.medium as '500',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: HORIZONTAL_PADDING,
-    marginBottom: Spacing.sm,
-  },
-  sectionTitle: {
-    fontSize: Typography.sizes.subtitle,
-    fontWeight: Typography.weights.bold as '700',
-    letterSpacing: -0.2,
-  },
-  seeAll: {
-    fontSize: Typography.sizes.small,
-    fontWeight: Typography.weights.semibold as '600',
-    color: Colors.olive,
-  },
-  horizontalListContent: {
-    paddingHorizontal: HORIZONTAL_PADDING,
-    paddingRight: HORIZONTAL_PADDING + CARD_GAP,
-  },
-  gridContainer: {
-    flexDirection: 'row',
-  },
-  gridColumn: {
+  headerTitleContainer: {
     flex: 1,
   },
-  gridCard: {
-    marginBottom: CARD_GAP,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: Spacing.xxxl,
-    paddingHorizontal: HORIZONTAL_PADDING,
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: Spacing.md,
-  },
-  emptyTitle: {
-    fontSize: Typography.sizes.subtitle,
-    fontWeight: Typography.weights.semibold as '600',
-    marginBottom: Spacing.xs,
-  },
-  emptySubtitle: {
-    fontSize: Typography.sizes.small,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  sectionError: {
+  brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: HORIZONTAL_PADDING,
-    paddingVertical: Spacing.md,
-    gap: Spacing.xs,
+    gap: 8,
   },
-  errorIcon: {
-    fontSize: 18,
-  },
-  errorText: {
-    fontSize: Typography.sizes.small,
-  },
-  // FAB
-  fabContainer: {
-    position: 'absolute',
-    bottom: Spacing.xxl,
-    right: Spacing.lg,
-    zIndex: 200,
-    elevation: Elevation.fab,
-    shadowColor: Colors.olive,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-  },
-  fab: {
-    width: FAB_SIZE,
-    height: FAB_SIZE,
-    borderRadius: FAB_SIZE / 2,
+  logoBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     backgroundColor: Colors.olive,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fabIcon: {
-    fontSize: 28,
-    lineHeight: 34,
+  brandName: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Hero Card
+  heroCardContainer: {
+    marginBottom: Spacing.lg,
+  },
+  heroCard: {
+    borderRadius: BorderRadius.card,
+    overflow: 'hidden',
+    position: 'relative',
+    height: 235,
+    justifyContent: 'flex-end',
+    backgroundColor: '#1E2019',
+    shadowColor: Colors.dark,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  heroBackground: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  heroGradientOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(18, 19, 14, 0.62)',
+  },
+  heroContent: {
+    padding: Spacing.md,
+    zIndex: 2,
+  },
+  heroTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginBottom: 6,
+  },
+  heroTagText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  heroTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  heroSubtitle: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: Spacing.sm,
+    maxWidth: '92%',
+  },
+  heroButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  heroPrimaryButton: {
+    backgroundColor: Colors.olive,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: BorderRadius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: Colors.olive,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  heroPrimaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  heroSecondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: BorderRadius.sm,
+  },
+  heroSecondaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+
+  // Categories
+  categoriesSection: {
+    marginBottom: Spacing.lg,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xs,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  seeAllText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  categoryScroll: {
+    paddingVertical: 6,
+    gap: 8,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  chipLabel: {
+    fontSize: 12,
+  },
+
+  // Poses Section
+  posesSection: {
+    marginBottom: Spacing.xl,
+  },
+  poseCountBadge: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  posesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: CARD_GAP,
+    marginTop: Spacing.xs,
+  },
+
+  // Horizontal Carousels
+  horizontalSection: {
+    marginBottom: Spacing.md,
+  },
+  sectionTitleWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  aiBadgePill: {
+    backgroundColor: 'rgba(101, 116, 74, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  aiBadgePillText: {
+    color: Colors.olive,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  explanationBadge: {
+    backgroundColor: 'rgba(101, 116, 74, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginBottom: 6,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  explanationText: {
+    color: Colors.olive,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  horizontalCardScroll: {
+    paddingVertical: 6,
   },
 });

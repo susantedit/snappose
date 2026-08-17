@@ -10,7 +10,8 @@ export function useFavorites() {
     queryKey: ['favorites'],
     queryFn: async () => {
       try {
-        const remoteIds = await fetchFavorites();
+        const remoteFavs = await fetchFavorites();
+        const remoteIds = remoteFavs.map((f) => f.poseId);
         // Sync local SQLite
         for (const id of remoteIds) {
           await sqliteFavs.add(id);

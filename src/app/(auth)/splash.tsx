@@ -1,23 +1,42 @@
-import { useEffect } from 'react';
-import { StyleSheet, View, Text, AccessibilityInfo } from 'react-native';
+/**
+ * SplashScreen — Cinematic Brand Reveal for Snap Pose.
+ *
+ * Sequence:
+ *  1. Background fades from deep black / warm cream.
+ *  2. High-res Snap Pose logo badge appears subtly (scale 0.92 → 1.0, opacity 0 → 1).
+ *  3. Soft light sweep passes across the mark.
+ *  4. "SNAP POSE" editorial wordmark reveals.
+ *  5. Tagline "POSE IT. SNAP IT. SHARE IT." fades in.
+ *  6. Seamless transition into Onboarding or Main Tabs.
+ */
+
+import React, { useEffect } from 'react';
+import {
+  AccessibilityInfo,
+  Dimensions,
+  Image,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  runOnJS,
   Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
 } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+
 import { mmkv } from '@/database/mmkv/mmkvClient';
 import { MMKV_KEYS } from '@/database/mmkv/keys';
-import { Colors, AnimationDurations, Typography, Spacing } from '@/constants/designTokens';
+import { Colors, Spacing } from '@/constants/designTokens';
+import { MotionEasings } from '@/constants/motion';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-/** Navigate without leaving a back-stack entry.  Runs on the JS thread. */
 function navigateAfterSplash(): void {
   const onboardingDone = mmkv.getBoolean(MMKV_KEYS.ONBOARDING_COMPLETED);
   if (onboardingDone === true) {
@@ -27,126 +46,160 @@ function navigateAfterSplash(): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
-/**
- * Splash screen — [Req 1.1–1.6]
- *
- * • Displays Snap Pose logo mark + wordmark + tagline            [Req 1.1]
- * • Animates logo scale 0.8→1.0 and opacity 0→1 in ≤400 ms     [Req 1.4]
- * • No interactive elements                                       [Req 1.5]
- * • Reads MMKV `onboardingCompleted` and routes accordingly      [Req 1.6]
- * • Reduce Motion: skips animation but still routes after delay  [Req 28]
- */
 export default function SplashScreen() {
-  // Animated values — initial state: invisible + scaled down
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0.8);
+  const bgOpacity = useSharedValue(0);
+  const logoScale = useSharedValue(0.92);
+  const logoOpacity = useSharedValue(0);
+  const shimmerPos = useSharedValue(-SCREEN_WIDTH);
+  const titleOpacity = useSharedValue(0);
+  const titleTranslateY = useSharedValue(18);
+  const taglineOpacity = useSharedValue(0);
+  const taglineTranslateY = useSharedValue(12);
+  const exitScale = useSharedValue(1);
 
   useEffect(() => {
     let didNavigate = false;
 
-    // Check Reduce Motion accessibility setting — if enabled, skip animation [Req 28]
     AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
       if (reduceMotion) {
-        // Skip animation — jump straight to full visibility
-        opacity.value = 1;
-        scale.value = 1;
-        // Still provide a brief branded pause before routing
-        const timer = setTimeout(() => {
+        bgOpacity.value = 1;
+        logoScale.value = 1;
+        logoOpacity.value = 1;
+        titleOpacity.value = 1;
+        taglineOpacity.value = 1;
+        setTimeout(() => {
           if (!didNavigate) {
             didNavigate = true;
             navigateAfterSplash();
           }
-        }, 600);
-        return () => clearTimeout(timer);
+        }, 800);
+        return;
       }
 
-      // Normal path: animate in ≤400 ms, then route  [Req 1.4]
-      const duration = AnimationDurations.splash; // 400 ms
-      opacity.value = withTiming(1, {
-        duration,
-        easing: Easing.out(Easing.ease),
-      });
-      scale.value = withTiming(
-        1,
-        { duration, easing: Easing.out(Easing.ease) },
-        (finished) => {
-          if (finished) {
-            // Animation complete — navigate [Req 1.6]
+      // Step 1: Background fade
+      bgOpacity.value = withTiming(1, { duration: 400 });
+
+      // Step 2: Logo scale & opacity reveal
+      logoOpacity.value = withDelay(
+        200,
+        withTiming(1, { duration: 600, easing: MotionEasings.outStandard }),
+      );
+      logoScale.value = withDelay(
+        200,
+        withTiming(1.0, { duration: 750, easing: MotionEasings.outStandard }),
+      );
+
+      // Step 3: Shimmer light sweep across logo
+      shimmerPos.value = withDelay(
+        600,
+        withTiming(SCREEN_WIDTH, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+      );
+
+      // Step 4: Wordmark reveal
+      titleOpacity.value = withDelay(
+        700,
+        withTiming(1, { duration: 450, easing: MotionEasings.outStandard }),
+      );
+      titleTranslateY.value = withDelay(
+        700,
+        withTiming(0, { duration: 450, easing: MotionEasings.outStandard }),
+      );
+
+      // Step 5: Tagline reveal
+      taglineOpacity.value = withDelay(
+        950,
+        withTiming(1, { duration: 400, easing: MotionEasings.outStandard }),
+      );
+      taglineTranslateY.value = withDelay(
+        950,
+        withTiming(0, { duration: 400, easing: MotionEasings.outStandard }),
+      );
+
+      // Step 6: Gentle exit scale and navigate
+      exitScale.value = withDelay(
+        1700,
+        withTiming(0.96, { duration: 350, easing: MotionEasings.inOutStandard }, (finished) => {
+          if (finished && !didNavigate) {
+            didNavigate = true;
             runOnJS(navigateAfterSplash)();
           }
-        },
+        }),
       );
     });
 
-    // Safety net: if animation callback never fires (e.g. component unmounts
-    // mid-animation), do not leave the user stranded.  Total cold-start
-    // transition budget is 2 s [Req 1.2], so 1.5 s covers the nominal 400 ms
-    // animation + 1.1 s headroom for JS thread load.
     const safetyTimer = setTimeout(() => {
       if (!didNavigate) {
         didNavigate = true;
         navigateAfterSplash();
       }
-    }, 1500);
+    }, 2400);
 
     return () => clearTimeout(safetyTimer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Animated styles
-  // ---------------------------------------------------------------------------
-
   const logoAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ scale: scale.value }],
+    opacity: logoOpacity.value,
+    transform: [{ scale: logoScale.value * exitScale.value }],
   }));
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  const titleAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: titleOpacity.value,
+    transform: [{ translateY: titleTranslateY.value }],
+  }));
+
+  const taglineAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: taglineOpacity.value,
+    transform: [{ translateY: taglineTranslateY.value }],
+  }));
+
+  const shimmerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shimmerPos.value }],
+  }));
 
   return (
-    // pointerEvents="none" on the root ensures no accidental interaction [Req 1.5]
     <View style={styles.container} pointerEvents="none">
-      <StatusBar style="dark" backgroundColor={Colors.cream} />
+      <StatusBar style="dark" backgroundColor={Colors.cream} translucent />
 
+      {/* Main Logo & Identity */}
       <Animated.View
         style={[styles.logoContainer, logoAnimatedStyle]}
         accessible={true}
         accessibilityRole="image"
-        accessibilityLabel="Snap Pose logo"
+        accessibilityLabel="POSEHANUM logo"
       >
-        {/* Logo mark — camera icon rendered as text (no image asset yet) */}
-        <View style={styles.logoMark}>
-          <Text style={styles.logoIcon} aria-hidden>📷</Text>
+        <View style={styles.logoMarkWrapper}>
+          <Image
+            source={require('../../../assets/logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+          {/* Subtle light sweep reflection */}
+          <Animated.View style={[styles.shimmerSweep, shimmerAnimatedStyle]} />
         </View>
 
         {/* Wordmark */}
-        <Text style={styles.wordmark} allowFontScaling={false}>
-          Snap Pose
-        </Text>
+        <Animated.View style={titleAnimatedStyle}>
+          <Text style={styles.wordmark} allowFontScaling={false}>
+            POSEHANUM
+          </Text>
+        </Animated.View>
 
-        {/* Tagline */}
-        <Text
-          style={styles.tagline}
-          allowFontScaling={false}
-          accessibilityLabel="Pose it. Snap it. Share it."
-        >
-          Pose it. Snap it. Share it.
-        </Text>
+        {/* Editorial Tagline */}
+        <Animated.View style={taglineAnimatedStyle}>
+          <View style={styles.taglineBadge}>
+            <Text
+              style={styles.tagline}
+              allowFontScaling={false}
+              accessibilityLabel="Pose Garौँ. Perfect Shot Lिऔँ."
+            >
+              LET'S POSE. LET'S CAPTURE.
+            </Text>
+          </View>
+        </Animated.View>
       </Animated.View>
     </View>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
   container: {
@@ -159,36 +212,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoMark: {
-    width: 96,
-    height: 96,
-    borderRadius: 24,
-    backgroundColor: Colors.olive,
+  logoMarkWrapper: {
+    width: 140,
+    height: 140,
+    borderRadius: 36,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
-    // Subtle shadow for depth
+    backgroundColor: '#FFFFFF',
     shadowColor: Colors.dark,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    elevation: 8,
   },
-  logoIcon: {
-    fontSize: 48,
+  logoImage: {
+    width: 132,
+    height: 132,
+    borderRadius: 32,
+  },
+  shimmerSweep: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+    transform: [{ skewX: '-25deg' }],
   },
   wordmark: {
-    fontSize: Typography.sizes.h1,          // 36
-    fontWeight: Typography.weights.bold,    // '700'
+    fontSize: 34,
+    fontWeight: '800',
     color: Colors.dark,
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
     marginBottom: Spacing.xs,
+    textAlign: 'center',
+  },
+  taglineBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 20,
+    backgroundColor: 'rgba(101, 116, 74, 0.12)',
+    marginTop: Spacing.xxs,
   },
   tagline: {
-    fontSize: Typography.sizes.body,        // 16
-    fontWeight: Typography.weights.medium,  // '500'
+    fontSize: 11,
+    fontWeight: '800',
     color: Colors.olive,
-    letterSpacing: 0.2,
-    marginTop: Spacing.xxs,
+    letterSpacing: 2.2,
+    textAlign: 'center',
   },
 });

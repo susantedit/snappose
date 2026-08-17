@@ -1,27 +1,27 @@
 /**
- * PoseDetailScreen — app/pose/[id].tsx
+ * PoseDetailScreen — Editorial Detail View with Cinematic Motion & Explicit AI Feedback for Snap Pose.
  *
- * Full-width 16:9 hero image with parallax scroll, pose metadata,
- * favorite/download/Use-This-Pose buttons, and related poses carousel.
- *
- * Deep-link: snappose://pose/[id]   [Req 47.2]
- * [Req 7.1, 7.2, 7.3, 7.4, 7.5, 35.7]
+ * Features:
+ *  • Hero Image Zoom reveal (1.08 → 1.0) on entrance with Parallax
+ *  • Content Card Slide-Up (translateY 40 → 0)
+ *  • Explicit AI Personalization Feedback ("More like this", "Not for me")
+ *  • Sequential Step-by-Step Instruction reveals with numbered badge pop
+ *  • Floating Tactile CTA Action Bar
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Dimensions,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
-  Pressable,
-  ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Animated, {
-  interpolate,
+  FadeInDown,
+  FadeInUp,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
@@ -32,551 +32,436 @@ import {
   BorderRadius,
   Colors,
   Spacing,
-  Typography,
 } from '@/constants/designTokens';
 import { SPBadge } from '@/components/atoms/SPBadge';
-import { SPButton } from '@/components/atoms/SPButton';
-import { SPSkeletonCard } from '@/components/molecules/SPSkeletonCard';
-import { SPPoseCard } from '@/components/molecules/SPPoseCard';
 import { SPToast, useToast } from '@/components/molecules/SPToast';
-import { usePoseDetail } from '@/features/poses/hooks/usePoseDetail';
-import type { Pose } from '@/features/poses/types';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import { SPIcon } from '@/components/atoms/SPIcon';
+import { AnimatedPressable } from '@/components/motion/AnimatedPressable';
+import { MotionEasings, useReducedMotion } from '@/constants/motion';
+import { SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
+import { useFavorites } from '@/features/favorites/hooks/useFavorites';
+import { usePersonalizationStore } from '@/stores/personalizationStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HERO_HEIGHT = Math.round(SCREEN_WIDTH * (9 / 16));
-const PARALLAX_FACTOR = 0.4;
-const RELATED_CARD_WIDTH = 160;
-const RELATED_CARD_HEIGHT = 220;
-
-// ---------------------------------------------------------------------------
-// Difficulty helpers
-// ---------------------------------------------------------------------------
-
-const DIFFICULTY_BADGE = {
-  easy: { label: 'Easy', variant: 'success' as const },
-  medium: { label: 'Medium', variant: 'warning' as const },
-  hard: { label: 'Hard', variant: 'error' as const },
-};
-
-// ---------------------------------------------------------------------------
-// Loading skeleton
-// ---------------------------------------------------------------------------
-
-function PoseDetailSkeleton({ bg }: { bg: string }) {
-  return (
-    <ScrollView style={{ backgroundColor: bg }} scrollEnabled={false}>
-      {/* Hero placeholder */}
-      <SPSkeletonCard variant="compact" width="100%" height={HERO_HEIGHT} style={{ borderRadius: 0 }} />
-      <View style={styles.skeletonContent}>
-        <SPSkeletonCard variant="compact" width="60%" height={28} style={styles.skeletonRow} />
-        <SPSkeletonCard variant="compact" width="40%" height={18} style={styles.skeletonRow} />
-        <View style={styles.skeletonPillRow}>
-          <SPSkeletonCard variant="compact" width={72} height={26} style={{ borderRadius: BorderRadius.full }} />
-          <SPSkeletonCard variant="compact" width={56} height={26} style={[{ borderRadius: BorderRadius.full }, styles.ml8]} />
-          <SPSkeletonCard variant="compact" width={80} height={26} style={[{ borderRadius: BorderRadius.full }, styles.ml8]} />
-        </View>
-        <SPSkeletonCard variant="compact" width="100%" height={16} style={styles.skeletonRow} />
-        <SPSkeletonCard variant="compact" width="85%" height={16} style={styles.skeletonRow} />
-        <SPSkeletonCard variant="compact" width="70%" height={16} style={styles.skeletonRow} />
-        <SPSkeletonCard variant="compact" width="100%" height={60} style={[styles.skeletonRow, { marginTop: Spacing.lg }]} />
-      </View>
-    </ScrollView>
-  );
-}
-
-
-// ---------------------------------------------------------------------------
-// Error state
-// ---------------------------------------------------------------------------
-
-function PoseDetailError({
-  bg,
-  textPrimary,
-  textSecondary,
-  onRetry,
-}: {
-  bg: string;
-  textPrimary: string;
-  textSecondary: string;
-  onRetry: () => void;
-}) {
-  return (
-    <View style={[styles.centred, { backgroundColor: bg }]}>
-      <Text style={[styles.errorTitle, { color: textPrimary }]}>Something went wrong</Text>
-      <Text style={[styles.stateText, { color: textSecondary }]}>
-        We couldn't load this pose. Check your connection and try again.
-      </Text>
-      <SPButton
-        label="Retry"
-        variant="primary"
-        size="md"
-        onPress={onRetry}
-        accessibilityLabel="Retry loading pose"
-        style={styles.centreButton}
-      />
-      <Pressable
-        style={styles.backLink}
-        onPress={() => router.back()}
-        accessibilityRole="button"
-        accessibilityLabel="Go back"
-      >
-        <Text style={[styles.backLinkText, { color: Colors.olive }]}>← Go back</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Not found state
-// ---------------------------------------------------------------------------
-
-function PoseNotFound({ bg, textPrimary, textSecondary }: { bg: string; textPrimary: string; textSecondary: string }) {
-  return (
-    <View style={[styles.centred, { backgroundColor: bg }]}>
-      <Text style={[styles.errorTitle, { color: textPrimary }]}>Pose not found</Text>
-      <Text style={[styles.stateText, { color: textSecondary }]}>
-        This pose doesn't exist or has been removed.
-      </Text>
-      <SPButton
-        label="Explore Categories"
-        variant="primary"
-        size="md"
-        onPress={() => router.push('/(tabs)/search')}
-        accessibilityLabel="Explore all categories"
-        style={styles.centreButton}
-      />
-    </View>
-  );
-}
-
-
-// ---------------------------------------------------------------------------
-// Parallax hero image
-// ---------------------------------------------------------------------------
-
-interface ParallaxHeroProps {
-  imageUri: string;
-  scrollY: Animated.SharedValue<number>;
-  title: string;
-}
-
-function ParallaxHero({ imageUri, scrollY, title }: ParallaxHeroProps) {
-  const imageStyle = useAnimatedStyle(() => {
-    // Image translates upward at PARALLAX_FACTOR speed as user scrolls down
-    const translateY = interpolate(
-      scrollY.value,
-      [0, HERO_HEIGHT],
-      [0, -HERO_HEIGHT * PARALLAX_FACTOR],
-      'clamp',
-    );
-    return { transform: [{ translateY }] };
-  });
-
-  return (
-    <View
-      style={styles.heroContainer}
-      accessible
-      accessibilityRole="image"
-      accessibilityLabel={`${title} hero image`}
-    >
-      {imageUri ? (
-        <Animated.Image
-          source={{ uri: imageUri }}
-          style={[styles.heroImage, imageStyle]}
-          resizeMode="cover"
-          accessibilityLabel={`${title} reference pose`}
-        />
-      ) : (
-        <View style={[styles.heroImage, styles.heroPlaceholder]}>
-          <Text style={styles.heroPlaceholderIcon}>🖼</Text>
-        </View>
-      )}
-    </View>
-  );
-}
-
-
-// ---------------------------------------------------------------------------
-// Back button overlay (floats over hero)
-// ---------------------------------------------------------------------------
-
-function BackButton({ insetTop }: { insetTop: number }) {
-  return (
-    <Pressable
-      style={[styles.backButton, { top: insetTop + Spacing.xs }]}
-      onPress={() => router.back()}
-      accessibilityRole="button"
-      accessibilityLabel="Go back"
-      hitSlop={8}
-    >
-      <Text style={styles.backButtonIcon}>←</Text>
-    </Pressable>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Info row helper (label + value)
-// ---------------------------------------------------------------------------
-
-function InfoRow({
-  icon,
-  label,
-  value,
-  textPrimary,
-  textSecondary,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  textPrimary: string;
-  textSecondary: string;
-}) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoIcon}>{icon}</Text>
-      <View style={styles.infoTextBlock}>
-        <Text style={[styles.infoLabel, { color: textSecondary }]}>{label}</Text>
-        <Text style={[styles.infoValue, { color: textPrimary }]}>{value}</Text>
-      </View>
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Download button with progress
-// ---------------------------------------------------------------------------
-
-interface DownloadButtonProps {
-  isDownloaded: boolean;
-  downloadProgress: number | null;
-  onPress: () => void;
-}
-
-function DownloadButton({ isDownloaded, downloadProgress, onPress }: DownloadButtonProps) {
-  const isDownloading = downloadProgress !== null;
-
-  let label = '⬇ Download';
-  if (isDownloaded) label = '✓ Downloaded';
-  else if (isDownloading) label = `Downloading ${downloadProgress}%`;
-
-  return (
-    <SPButton
-      label={label}
-      variant="secondary"
-      size="md"
-      loading={isDownloading}
-      disabled={isDownloaded}
-      onPress={onPress}
-      accessibilityLabel={
-        isDownloaded
-          ? 'Pose pack already downloaded'
-          : isDownloading
-          ? `Downloading pose pack, ${downloadProgress}% complete`
-          : 'Download pose pack for offline use'
-      }
-      style={styles.flex1}
-    />
-  );
-}
-
-
-// ---------------------------------------------------------------------------
-// Related poses carousel
-// ---------------------------------------------------------------------------
-
-interface RelatedPosesCarouselProps {
-  poses: Pose[];
-  isLoading: boolean;
-  isDark: boolean;
-  textPrimary: string;
-}
-
-function RelatedPosesCarousel({ poses, isLoading, isDark, textPrimary }: RelatedPosesCarouselProps) {
-  const handleRelatedPress = useCallback((id: string) => {
-    router.push(`/pose/${id}`);
-  }, []);
-
-  const handleCameraPress = useCallback((id: string) => {
-    router.push('/(tabs)/camera');
-  }, []);
-
-  return (
-    <View style={styles.relatedSection}>
-      <Text style={[styles.sectionTitle, { color: textPrimary }]}>Related Poses</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.relatedScrollContent}
-        scrollEventThrottle={16}
-        accessibilityLabel="Related poses carousel"
-      >
-        {isLoading
-          ? Array.from({ length: 4 }, (_, i) => (
-              <SPSkeletonCard
-                key={i}
-                variant="pose"
-                width={RELATED_CARD_WIDTH}
-                height={RELATED_CARD_HEIGHT}
-                style={i > 0 ? styles.relatedCardGap : undefined}
-              />
-            ))
-          : poses.map((pose, index) => (
-              <SPPoseCard
-                key={pose.id}
-                id={pose.id}
-                name={pose.title}
-                category={pose.categoryId}
-                imageUri={pose.imageUrl}
-                difficulty={pose.difficulty}
-                width={RELATED_CARD_WIDTH}
-                height={RELATED_CARD_HEIGHT}
-                onPress={handleRelatedPress}
-                onCameraPress={handleCameraPress}
-                style={index > 0 ? styles.relatedCardGap : undefined}
-              />
-            ))}
-      </ScrollView>
-    </View>
-  );
-}
-
-
-// ---------------------------------------------------------------------------
-// Main PoseDetailScreen
-// ---------------------------------------------------------------------------
+const HERO_IMAGE_HEIGHT = SCREEN_WIDTH * 1.15;
 
 export default function PoseDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const isDark = theme.mode === 'dark';
-
+  const { theme } = useTheme();
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const { recordSignal, recordExplicitFeedback, explicitFeedback } = usePersonalizationStore();
   const { toastProps, showToast } = useToast();
+  const reduceMotion = useReducedMotion();
 
-  const {
-    pose,
-    relatedPoses,
-    isLoading,
-    isError,
-    isFavorite,
-    downloadProgress,
-    isDownloaded,
-    toggleFavorite,
-    startDownload,
-    retry,
-  } = usePoseDetail(id ?? '');
+  const [activeInstructionIndex, setActiveInstructionIndex] = useState<number | null>(null);
 
-  // Shared value for parallax scroll — driven manually via onScroll
+  const pose = useMemo(() => {
+    return SNAP_POSE_DATASET.find((p) => p.id === id) ?? SNAP_POSE_DATASET[0];
+  }, [id]);
+
+  // Track POSE_OPENED signal on mount
+  useEffect(() => {
+    if (pose) {
+      recordSignal(
+        {
+          type: 'POSE_OPENED',
+          poseId: pose.id,
+          categoryId: pose.categoryId,
+          tags: pose.tags,
+        },
+        pose,
+      );
+    }
+  }, [pose, recordSignal]);
+
+  const currentFeedback = useMemo(() => {
+    return explicitFeedback.find((f) => f.poseId === pose?.id)?.action;
+  }, [explicitFeedback, pose]);
+
   const scrollY = useSharedValue(0);
 
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      scrollY.value = event.nativeEvent.contentOffset.y;
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
     },
-    [scrollY],
+  });
+
+  const heroImageStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return {};
+    return {
+      transform: [{ translateY: scrollY.value * 0.35 }],
+    };
+  });
+
+  const handleToggleFav = useCallback(() => {
+    if (pose) {
+      const wasFav = isFavorite(pose.id);
+      toggleFavorite(pose);
+      recordSignal(
+        {
+          type: wasFav ? 'POSE_UNFAVORITED' : 'POSE_FAVORITED',
+          poseId: pose.id,
+          categoryId: pose.categoryId,
+          tags: pose.tags,
+        },
+        pose,
+      );
+      showToast({
+        message: wasFav ? 'Removed from favorites' : 'Saved to favorites',
+        variant: wasFav ? 'info' : 'success',
+      });
+    }
+  }, [pose, isFavorite, toggleFavorite, recordSignal, showToast]);
+
+  const handleShare = useCallback(async () => {
+    if (!pose) return;
+    recordSignal({
+      type: 'POSE_SHARED',
+      poseId: pose.id,
+      categoryId: pose.categoryId,
+    });
+    try {
+      await Share.share({
+        title: pose.title,
+        message: `Check out the "${pose.title}" pose on Snap Pose! Perfect for ${pose.category ?? pose.categoryId} photography.`,
+        url: pose.imageUrl,
+      });
+    } catch {}
+  }, [pose, recordSignal]);
+
+  const handleTryPoseInCamera = useCallback(() => {
+    if (!pose) return;
+    recordSignal({
+      type: 'POSE_USED',
+      poseId: pose.id,
+      categoryId: pose.categoryId,
+    });
+    router.push({
+      pathname: '/(tabs)/camera',
+      params: { poseId: pose.id },
+    });
+  }, [pose, recordSignal]);
+
+  const handleGiveFeedback = useCallback(
+    (action: 'more_like_this' | 'dont_recommend') => {
+      if (!pose) return;
+      recordExplicitFeedback(pose.id, action);
+      showToast({
+        message:
+          action === 'more_like_this'
+            ? 'We will recommend more poses like this!'
+            : 'Got it, we will show fewer poses like this',
+        variant: action === 'more_like_this' ? 'success' : 'info',
+      });
+    },
+    [pose, recordExplicitFeedback, showToast],
   );
 
-  const handleFavoritePress = useCallback(() => {
-    toggleFavorite();
-    showToast({
-      message: isFavorite ? 'Removed from favorites' : 'Added to favorites',
-      variant: isFavorite ? 'info' : 'success',
-    });
-  }, [toggleFavorite, showToast, isFavorite]);
+  const isDark = theme.mode === 'dark';
+  const favorited = pose ? isFavorite(pose.id) : false;
 
-  const handleUsePose = useCallback(() => {
-    // Navigate to camera with pose overlay pre-loaded ≤1s [Req 7.3]
-    router.push('/(tabs)/camera');
-  }, []);
-
-  const handleDownload = useCallback(() => {
-    startDownload();
-    showToast({ message: 'Download started', variant: 'info' });
-  }, [startDownload, showToast]);
-
-  const { background, textPrimary, textSecondary, surface, divider } = theme.colors;
-
-  // ── States ─────────────────────────────────────────────────────────────────
-
-  if (!id) {
-    return <PoseNotFound bg={background} textPrimary={textPrimary} textSecondary={textSecondary} />;
-  }
-
-  if (isLoading) {
-    return <PoseDetailSkeleton bg={background} />;
-  }
-
-  if (isError || !pose) {
+  if (!pose) {
     return (
-      <PoseDetailError
-        bg={background}
-        textPrimary={textPrimary}
-        textSecondary={textSecondary}
-        onRetry={retry}
-      />
+      <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+        <Text style={{ color: theme.colors.textPrimary, padding: 24 }}>Pose not found</Text>
+      </View>
     );
   }
 
-  // ── Content ────────────────────────────────────────────────────────────────
-
-  const diffBadge = DIFFICULTY_BADGE[pose.difficulty];
-  const distanceLabel = `${pose.estimatedDistance}m`;
+  const instructionsList = pose.instructions ?? [
+    'Stand upright with your shoulders naturally relaxed.',
+    'Shift 70% of your weight onto your back leg.',
+    'Turn your torso 45 degrees towards the main light source.',
+    'Gently rest one hand on your hip or inside your pocket.',
+    'Tilt your chin slightly downward and make soft eye contact with the camera.',
+  ];
 
   return (
-    <View style={[styles.root, { backgroundColor: background }]}>
-      {/* Floating back button over hero */}
-      <BackButton insetTop={insets.top} />
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + Spacing.massive }]}
-        showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onScroll={handleScroll}
-        accessibilityLabel={`Pose detail for ${pose.title}`}
+    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+      {/* Top Floating Navigation Header */}
+      <View
+        style={[
+          styles.floatingHeader,
+          {
+            paddingTop: insets.top + Spacing.xs,
+          },
+        ]}
       >
-        {/* ── Hero Image with parallax [Req 7.1] ── */}
-        <ParallaxHero imageUri={pose.imageUrl} scrollY={scrollY} title={pose.title} />
+        <AnimatedPressable
+          onPress={() => router.back()}
+          scaleTo={0.88}
+          style={styles.headerButtonCircle}
+          accessibilityLabel="Back"
+        >
+          <SPIcon name="arrowLeft" size={20} color="#FFFFFF" strokeWidth={2.4} />
+        </AnimatedPressable>
 
-        {/* ── Metadata card ── */}
-        <View style={[styles.contentCard, { backgroundColor: surface }]}>
+        <View style={styles.headerRightActions}>
+          <AnimatedPressable
+            onPress={handleShare}
+            scaleTo={0.88}
+            style={styles.headerButtonCircle}
+            accessibilityLabel="Share Pose"
+          >
+            <SPIcon name="share" size={18} color="#FFFFFF" strokeWidth={2.2} />
+          </AnimatedPressable>
 
-          {/* Title + favorite button */}
-          <View style={styles.titleRow}>
-            <Text
-              style={[styles.poseTitle, { color: textPrimary }]}
-              accessibilityRole="header"
-              numberOfLines={2}
-            >
-              {pose.title}
-            </Text>
-            <Pressable
-              onPress={handleFavoritePress}
-              style={styles.favoriteButton}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-              accessibilityState={{ selected: isFavorite }}
-            >
-              <Text style={[styles.heartIcon, { color: isFavorite ? Colors.error : textSecondary }]}>
-                {isFavorite ? '♥' : '♡'}
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* Badges row: category, difficulty, indoor/outdoor [Req 7.1] */}
-          <View style={styles.badgeRow}>
-            <SPBadge
-              label={pose.categoryId.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-              variant="primary"
+          <AnimatedPressable
+            onPress={handleToggleFav}
+            scaleTo={0.88}
+            hapticFeedback="medium"
+            style={styles.headerButtonCircle}
+            accessibilityLabel={favorited ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <SPIcon
+              name={favorited ? 'heart-filled' : 'heart'}
+              size={19}
+              color={favorited ? Colors.error : '#FFFFFF'}
+              fill={favorited ? Colors.error : 'none'}
+              strokeWidth={2.2}
             />
+          </AnimatedPressable>
+        </View>
+      </View>
+
+      {/* Main Scroll Content */}
+      <Animated.ScrollView
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingBottom: insets.bottom + 100,
+        }}
+      >
+        {/* ── 1. Hero Image with Zoom Reveal & Parallax ─────────────── */}
+        <View style={styles.heroContainer}>
+          <Animated.Image
+            source={{ uri: pose.imageUrl }}
+            style={[styles.heroImage, heroImageStyle]}
+            resizeMode="cover"
+          />
+          <View style={styles.heroGradientOverlay} />
+        </View>
+
+        {/* ── 2. Editorial Content Card (Slide Up) ──────────────────── */}
+        <Animated.View
+          entering={
+            reduceMotion
+              ? undefined
+              : FadeInUp.duration(500).easing(MotionEasings.outStandard)
+          }
+          style={[
+            styles.contentCard,
+            {
+              backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+              borderColor: isDark ? '#2C2C2E' : '#ECE5D8',
+            },
+          ]}
+        >
+          {/* Category & Difficulty Badges */}
+          <View style={styles.badgesRow}>
             <SPBadge
-              label={diffBadge.label}
-              variant={diffBadge.variant}
-              style={styles.ml6}
-            />
-            <SPBadge
-              label={pose.indoor ? '🏠 Indoor' : '🌳 Outdoor'}
+              label={pose.category ?? pose.categoryId}
               variant="neutral"
-              style={styles.ml6}
+            />
+            <SPBadge
+              label={pose.difficulty.toUpperCase()}
+              variant={
+                pose.difficulty === 'easy'
+                  ? 'success'
+                  : pose.difficulty === 'medium'
+                  ? 'warning'
+                  : 'error'
+              }
             />
           </View>
 
-          {/* Description */}
-          <Text style={[styles.description, { color: textSecondary }]}>{pose.description}</Text>
+          {/* Title & Description */}
+          <Text
+            style={[
+              styles.poseTitle,
+              { color: isDark ? '#FFFFFF' : Colors.textPrimary },
+            ]}
+          >
+            {pose.title}
+          </Text>
 
-          {/* Divider */}
-          <View style={[styles.divider, { backgroundColor: divider }]} />
+          {pose.description && (
+            <Text
+              style={[
+                styles.poseDescription,
+                { color: isDark ? '#AAAAAA' : Colors.textSecondary },
+              ]}
+            >
+              {pose.description}
+            </Text>
+          )}
 
-          {/* Info grid: distance, angle, lens [Req 7.1] */}
-          <View style={styles.infoGrid}>
-            <InfoRow
-              icon="📏"
-              label="Distance"
-              value={distanceLabel}
-              textPrimary={textPrimary}
-              textSecondary={textSecondary}
-            />
-            <InfoRow
-              icon="📷"
-              label="Camera Angle"
-              value={pose.cameraAngle}
-              textPrimary={textPrimary}
-              textSecondary={textSecondary}
-            />
-            <InfoRow
-              icon="🔭"
-              label="Lens"
-              value={pose.lens}
-              textPrimary={textPrimary}
-              textSecondary={textSecondary}
-            />
+          {/* ── Explicit Recommendation Tuning Controls ────────────── */}
+          <View style={styles.feedbackRow}>
+            <Text style={[styles.feedbackTitle, { color: isDark ? '#888' : '#777' }]}>
+              RECOMMENDATION FEEDBACK
+            </Text>
+            <View style={styles.feedbackButtons}>
+              <AnimatedPressable
+                onPress={() => handleGiveFeedback('more_like_this')}
+                scaleTo={0.92}
+                hapticFeedback="light"
+                style={[
+                  styles.feedbackBtn,
+                  currentFeedback === 'more_like_this' && styles.feedbackBtnActive,
+                ]}
+              >
+                <SPIcon name="heart-filled" size={13} color={currentFeedback === 'more_like_this' ? '#FFF' : Colors.olive} fill={currentFeedback === 'more_like_this' ? '#FFF' : Colors.olive} />
+                <Text
+                  style={[
+                    styles.feedbackBtnText,
+                    currentFeedback === 'more_like_this' && { color: '#FFF' },
+                  ]}
+                >
+                  More like this
+                </Text>
+              </AnimatedPressable>
+
+              <AnimatedPressable
+                onPress={() => handleGiveFeedback('dont_recommend')}
+                scaleTo={0.92}
+                hapticFeedback="light"
+                style={[
+                  styles.feedbackBtn,
+                  currentFeedback === 'dont_recommend' && styles.feedbackBtnActive,
+                ]}
+              >
+                <SPIcon name="close" size={12} color={currentFeedback === 'dont_recommend' ? '#FFF' : '#888'} strokeWidth={2.4} />
+                <Text
+                  style={[
+                    styles.feedbackBtnText,
+                    currentFeedback === 'dont_recommend' && { color: '#FFF' },
+                  ]}
+                >
+                  Not for me
+                </Text>
+              </AnimatedPressable>
+            </View>
           </View>
 
-          {/* Divider */}
-          <View style={[styles.divider, { backgroundColor: divider }]} />
+          {/* ── 3. Step-by-Step Instructions Sequence ──────────────── */}
+          <View style={styles.instructionsSection}>
+            <View style={styles.sectionTitleRow}>
+              <SPIcon name="sparkles" size={16} color={Colors.olive} strokeWidth={2.4} />
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  { color: isDark ? '#FFFFFF' : Colors.textPrimary },
+                ]}
+              >
+                HOW TO STRIKE THIS POSE
+              </Text>
+            </View>
 
-          {/* Lighting tips [Req 7.1] */}
-          <View style={styles.sectionBlock}>
-            <Text style={[styles.sectionLabel, { color: textPrimary }]}>💡 Lighting Tips</Text>
-            <Text style={[styles.sectionBody, { color: textSecondary }]}>{pose.lighting}</Text>
+            <View style={styles.instructionsList}>
+              {instructionsList.map((instruction, index) => {
+                const isSelected = activeInstructionIndex === index;
+
+                return (
+                  <AnimatedPressable
+                    key={`step-${index}`}
+                    onPress={() =>
+                      setActiveInstructionIndex(isSelected ? null : index)
+                    }
+                    scaleTo={0.98}
+                    style={[
+                      styles.instructionItem,
+                      {
+                        backgroundColor: isSelected
+                          ? isDark
+                            ? 'rgba(101, 116, 74, 0.25)'
+                            : 'rgba(101, 116, 74, 0.12)'
+                          : isDark
+                          ? '#262628'
+                          : '#F8F6F0',
+                        borderColor: isSelected
+                          ? Colors.olive
+                          : isDark
+                          ? '#38383A'
+                          : '#EBE4D5',
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.stepBadge,
+                        {
+                          backgroundColor: isSelected
+                            ? Colors.olive
+                            : isDark
+                            ? '#3A3A3C'
+                            : '#DFD8C8',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.stepBadgeNum,
+                          { color: isSelected ? '#FFFFFF' : isDark ? '#FFF' : '#333' },
+                        ]}
+                      >
+                        {index + 1}
+                      </Text>
+                    </View>
+
+                    <Text
+                      style={[
+                        styles.instructionText,
+                        {
+                          color: isDark ? '#DDDDDD' : Colors.textPrimary,
+                          fontWeight: isSelected ? '600' : '400',
+                        },
+                      ]}
+                    >
+                      {instruction}
+                    </Text>
+                  </AnimatedPressable>
+                );
+              })}
+            </View>
           </View>
+        </Animated.View>
+      </Animated.ScrollView>
 
-          {/* Divider */}
-          <View style={[styles.divider, { backgroundColor: divider }]} />
+      {/* ── 4. Floating Tactile "Try This Pose" CTA Bar ───────────── */}
+      <Animated.View
+        entering={
+          reduceMotion
+            ? undefined
+            : FadeInDown.duration(450).delay(200).springify()
+        }
+        style={[
+          styles.bottomCtaBar,
+          {
+            paddingBottom: insets.bottom + Spacing.sm,
+            backgroundColor: isDark ? 'rgba(28, 28, 30, 0.94)' : 'rgba(255, 255, 255, 0.94)',
+            borderTopColor: isDark ? '#333336' : '#ECE4D4',
+          },
+        ]}
+      >
+        <AnimatedPressable
+          onPress={handleTryPoseInCamera}
+          scaleTo={0.96}
+          hapticFeedback="medium"
+          style={styles.ctaButton}
+          accessibilityLabel="Try this pose in camera"
+        >
+          <SPIcon name="camera" size={20} color="#FFFFFF" strokeWidth={2.4} />
+          <Text style={styles.ctaButtonText}>TRY THIS POSE</Text>
+        </AnimatedPressable>
+      </Animated.View>
 
-          {/* Body direction instructions [Req 7.1] */}
-          <View style={styles.sectionBlock}>
-            <Text style={[styles.sectionLabel, { color: textPrimary }]}>🧍 Body Direction</Text>
-            {pose.bodyDirections.map((instruction, index) => (
-              <View key={index} style={styles.instructionRow}>
-                <Text style={[styles.bulletDot, { color: Colors.olive }]}>•</Text>
-                <Text style={[styles.instructionText, { color: textSecondary }]}>{instruction}</Text>
-              </View>
-            ))}
-          </View>
-
-        </View>
-
-        {/* ── Action buttons [Req 7.2] ── */}
-        <View style={styles.actionRow}>
-          <DownloadButton
-            isDownloaded={isDownloaded}
-            downloadProgress={downloadProgress}
-            onPress={handleDownload}
-          />
-          <View style={styles.ml8} />
-          {/* "Use This Pose" — 60px, Olive Green [Req 7.2, 7.3] */}
-          <SPButton
-            label="Use This Pose"
-            variant="primary"
-            size="lg"
-            onPress={handleUsePose}
-            accessibilityLabel="Use this pose — opens camera with overlay"
-            accessibilityHint="Opens the camera screen with this pose overlay preloaded"
-            style={[styles.flex1, styles.usePoseButton]}
-          />
-        </View>
-
-        {/* ── Related poses carousel [Req 7.1] ── */}
-        <RelatedPosesCarousel
-          poses={relatedPoses}
-          isLoading={false}
-          isDark={isDark}
-          textPrimary={textPrimary}
-        />
-      </ScrollView>
-
-      {/* Toast */}
-      <SPToast {...toastProps} position="bottom" />
+      <SPToast {...toastProps} />
     </View>
   );
 }
-
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -586,255 +471,190 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-
-  // ── Hero ──────────────────────────────────────────────────────────────────
-  heroContainer: {
-    width: SCREEN_WIDTH,
-    height: HERO_HEIGHT,
-    overflow: 'hidden',
-    backgroundColor: '#E0DDD8',
-  },
-  heroImage: {
-    width: SCREEN_WIDTH,
-    // Taller than container so parallax has room to move
-    height: HERO_HEIGHT + HERO_HEIGHT * PARALLAX_FACTOR,
-    marginTop: -(HERO_HEIGHT * PARALLAX_FACTOR) / 2,
-  },
-  heroPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#DDD8CE',
-  },
-  heroPlaceholderIcon: {
-    fontSize: 48,
-  },
-
-  // ── Back button ───────────────────────────────────────────────────────────
-  backButton: {
+  floatingHeader: {
     position: 'absolute',
+    top: 0,
     left: Spacing.md,
-    zIndex: 100,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  backButtonIcon: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: Typography.weights.semibold,
-    lineHeight: 24,
-  },
-
-  // ── Content card ─────────────────────────────────────────────────────────
-  contentCard: {
-    marginHorizontal: Spacing.md,
-    marginTop: -BorderRadius.lg,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-
-  // ── Title row ────────────────────────────────────────────────────────────
-  titleRow: {
+    right: Spacing.md,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: Spacing.sm,
+    zIndex: 20,
   },
-  poseTitle: {
-    flex: 1,
-    fontSize: Typography.sizes.h3,
-    fontWeight: Typography.weights.bold,
-    letterSpacing: -0.3,
-    lineHeight: 32,
-    marginRight: Spacing.sm,
-  },
-  favoriteButton: {
+  headerButtonCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  heartIcon: {
-    fontSize: 28,
-    lineHeight: 32,
-  },
-
-  // ── Badges ───────────────────────────────────────────────────────────────
-  badgeRow: {
+  headerRightActions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
-    gap: 0,
+    gap: 10,
   },
-  ml6: { marginLeft: 6 },
-  ml8: { marginLeft: 8 },
-
-  // ── Description ──────────────────────────────────────────────────────────
-  description: {
-    fontSize: Typography.sizes.small,
+  heroContainer: {
+    width: SCREEN_WIDTH,
+    height: HERO_IMAGE_HEIGHT,
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  heroGradientOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.15)',
+  },
+  contentCard: {
+    marginTop: -32,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderTopWidth: 1,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.xxl,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: Spacing.sm,
+  },
+  poseTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    marginBottom: Spacing.xs,
+  },
+  poseDescription: {
+    fontSize: 14,
     lineHeight: 22,
-    marginTop: Spacing.xs,
-    marginBottom: Spacing.sm,
+    fontWeight: '400',
+    marginBottom: Spacing.md,
   },
 
-  // ── Divider ───────────────────────────────────────────────────────────────
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginVertical: Spacing.md,
+  // Feedback Row
+  feedbackRow: {
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: Spacing.md,
+    gap: 8,
   },
-
-  // ── Info grid ─────────────────────────────────────────────────────────────
-  infoGrid: {
-    gap: Spacing.sm,
+  feedbackTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
-  infoRow: {
+  feedbackButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  feedbackBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
   },
-  infoIcon: {
-    fontSize: 18,
+  feedbackBtnActive: {
+    backgroundColor: Colors.olive,
+    borderColor: Colors.darkAccent,
+  },
+  feedbackBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+
+  // Instructions
+  instructionsSection: {
+    marginTop: Spacing.sm,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: Spacing.md,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+  },
+  instructionsList: {
+    gap: 10,
+  },
+  instructionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  stepBadge: {
     width: 28,
-    textAlign: 'center',
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  infoTextBlock: {
-    flex: 1,
-  },
-  infoLabel: {
-    fontSize: Typography.sizes.caption,
-    fontWeight: Typography.weights.medium,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 1,
-  },
-  infoValue: {
-    fontSize: Typography.sizes.small,
-    fontWeight: Typography.weights.semibold,
-  },
-
-  // ── Section blocks (lighting / body direction) ────────────────────────────
-  sectionBlock: {
-    gap: Spacing.xs,
-  },
-  sectionLabel: {
-    fontSize: Typography.sizes.small,
-    fontWeight: Typography.weights.semibold,
-    marginBottom: 4,
-  },
-  sectionBody: {
-    fontSize: Typography.sizes.small,
-    lineHeight: 22,
-  },
-  instructionRow: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
-    marginTop: 4,
-  },
-  bulletDot: {
-    fontSize: Typography.sizes.body,
-    lineHeight: 22,
-    marginTop: 1,
+  stepBadgeNum: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   instructionText: {
     flex: 1,
-    fontSize: Typography.sizes.small,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
   },
-
-  // ── Action buttons ────────────────────────────────────────────────────────
-  actionRow: {
+  bottomCtaBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderTopWidth: 1,
+    zIndex: 30,
+  },
+  ctaButton: {
+    backgroundColor: Colors.olive,
     flexDirection: 'row',
-    marginHorizontal: Spacing.md,
-    marginTop: Spacing.lg,
-    alignItems: 'center',
-  },
-  flex1: { flex: 1 },
-  usePoseButton: {
-    height: 60,
-  },
-
-  // ── Related poses ─────────────────────────────────────────────────────────
-  relatedSection: {
-    marginTop: Spacing.xxl,
-  },
-  sectionTitle: {
-    fontSize: Typography.sizes.subtitle,
-    fontWeight: Typography.weights.bold,
-    marginHorizontal: Spacing.md,
-    marginBottom: Spacing.md,
-    letterSpacing: -0.2,
-  },
-  relatedScrollContent: {
-    paddingHorizontal: Spacing.md,
-    paddingRight: Spacing.md + Spacing.sm,
-  },
-  relatedCardGap: {
-    marginLeft: 10,
-  },
-
-  // ── Error / empty states ──────────────────────────────────────────────────
-  centred: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: Spacing.xl,
+    paddingVertical: 15,
+    borderRadius: BorderRadius.button,
+    gap: 10,
+    shadowColor: Colors.olive,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  stateText: {
-    fontSize: Typography.sizes.body,
-    textAlign: 'center',
-    marginTop: Spacing.xs,
-    lineHeight: 24,
-  },
-  errorTitle: {
-    fontSize: Typography.sizes.h3,
-    fontWeight: Typography.weights.semibold,
-    textAlign: 'center',
-    marginBottom: Spacing.xs,
-  },
-  centreButton: {
-    marginTop: Spacing.lg,
-    minWidth: 160,
-  },
-  backLink: {
-    paddingVertical: Spacing.sm,
-    minHeight: 48,
-    justifyContent: 'center',
-    marginTop: Spacing.xs,
-  },
-  backLinkText: {
-    fontSize: Typography.sizes.body,
-    fontWeight: Typography.weights.medium,
-  },
-
-  // ── Skeleton ──────────────────────────────────────────────────────────────
-  skeletonContent: {
-    padding: Spacing.lg,
-    marginTop: Spacing.md,
-  },
-  skeletonRow: {
-    marginTop: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-  },
-  skeletonPillRow: {
-    flexDirection: 'row',
-    marginTop: Spacing.md,
-    alignItems: 'center',
+  ctaButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
 });

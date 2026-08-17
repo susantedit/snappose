@@ -20,10 +20,10 @@ import type { NormalisedLandmarks, Landmark } from '../features/ai/types';
 
 // Arbitrary Landmark generator: normalized coords within [-2, 2]
 const arbLandmark = fc.record({
-  x: fc.float({ min: -2, max: 2, noNaN: true }),
-  y: fc.float({ min: -2, max: 2, noNaN: true }),
-  z: fc.float({ min: -2, max: 2, noNaN: true }),
-  visibility: fc.float({ min: 0.6, max: 1.0, noNaN: true }),
+  x: fc.double({ min: -2, max: 2, noNaN: true }),
+  y: fc.double({ min: -2, max: 2, noNaN: true }),
+  z: fc.double({ min: -2, max: 2, noNaN: true }),
+  visibility: fc.double({ min: 0.6, max: 1.0, noNaN: true }),
 });
 
 // Arbitrary 33-landmark set generator
@@ -67,8 +67,8 @@ describe('PoseScoreCalculator Property-Based Tests', () => {
 
     fc.assert(
       fc.property(
-        fc.float({ min: 0.001, max: 0.02, noNaN: true }),
-        fc.float({ min: 0.5, max: 1.5, noNaN: true }),
+        fc.double({ min: 0.001, max: 0.02, noNaN: true }),
+        fc.double({ min: 0.5, max: 1.5, noNaN: true }),
         (smallNoise, largeNoise) => {
           const smallJittered: NormalisedLandmarks = refSkeleton.map((lm) => ({
             ...lm,

@@ -10,13 +10,16 @@ export interface QueueItem {
 }
 
 const QUEUE_KEY = 'offline_mutation_queue';
+const MAX_QUEUE_SIZE = 100; // DoS / memory bounds protection
 
 export function getOfflineQueue(): QueueItem[] {
   return mmkvGet<QueueItem[]>(QUEUE_KEY) || [];
 }
 
 export function saveOfflineQueue(queue: QueueItem[]): void {
-  mmkvSet(QUEUE_KEY, queue);
+  // Ensure bounds limit
+  const boundedQueue = queue.slice(-MAX_QUEUE_SIZE);
+  mmkvSet(QUEUE_KEY, boundedQueue);
 }
 
 export function enqueueMutation(
@@ -24,6 +27,13 @@ export function enqueueMutation(
   payload: Record<string, unknown>
 ): void {
   const queue = getOfflineQueue();
+
+  // Defensive sanitization: reject if payload contains prototype pollution keys
+  if (payload && (Object.prototype.hasOwnProperty.call(payload, '__proto__') || Object.prototype.hasOwnProperty.call(payload, 'constructor'))) {
+    console.warn('[OfflineQueue] Rejected unsafe mutation payload');
+    return;
+  }
+
   const newItem: QueueItem = {
     id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     type,
@@ -31,6 +41,7 @@ export function enqueueMutation(
     createdAt: Date.now(),
     retryCount: 0,
   };
+
   queue.push(newItem);
   saveOfflineQueue(queue);
 }
@@ -45,10 +56,12 @@ export async function processOfflineQueue(): Promise<void> {
     try {
       if (item.type === 'TOGGLE_FAVORITE') {
         const { poseId, isFavorite } = item.payload;
-        if (isFavorite) {
-          await api.post('/favorites', { poseId });
-        } else {
-          await api.delete(`/favorites/${poseId}`);
+        if (typeof poseId === 'string' && poseId.trim().length > 0) {
+          if (isFavorite) {
+            await api.post('/favorites', { poseId });
+          } else {
+            await api.delete(`/favorites/${encodeURIComponent(poseId)}`);
+          }
         }
       } else if (item.type === 'RECORD_CAPTURE') {
         await api.post('/captures', item.payload);

@@ -1,13 +1,16 @@
 /**
- * SPPoseCard — masonry pose card.
- * Port of ReferencePoseCard.kt.
- * Features: image, pose name, category pill, heart/favorite icon, camera shortcut button.
- * Min touch targets ≥ 48×48 dp. [Req 32]
+ * SPPoseCard — Tactile editorial masonry pose card.
+ *
+ * Features:
+ *  • Tactile compress (1 → 0.96 → 1) with Reanimated spring physics
+ *  • Subtle image zoom (1 → 1.04) on press
+ *  • Signature favorite spring micro-interaction (1 → 1.35 → 0.95 → 1) with radial pulse ring
+ *  • Haptic-feel feedback & accessibility hints
  */
 
 import React, { useCallback } from 'react';
 import {
-  Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -18,11 +21,17 @@ import {
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
+  withSequence,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
+
 import { useTheme } from '@/constants/theme';
-import { AnimationDurations, BorderRadius, Colors, Spacing, Typography } from '@/constants/designTokens';
+import { BorderRadius, Colors, Spacing, Typography } from '@/constants/designTokens';
 import { SPBadge } from '@/components/atoms/SPBadge';
+import { SPIcon } from '@/components/atoms/SPIcon';
+import { MotionDurations, MotionSprings, useReducedMotion } from '@/constants/motion';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,29 +40,17 @@ import { SPBadge } from '@/components/atoms/SPBadge';
 export type PoseDifficulty = 'easy' | 'medium' | 'hard';
 
 export interface SPPoseCardProps {
-  /** Unique pose identifier. */
   id: string;
-  /** Display name of the pose. */
   name: string;
-  /** Category for the pill label. */
   category: string;
-  /** Image URI — remote URL or local file path. */
   imageUri?: string;
-  /** Difficulty level. */
   difficulty?: PoseDifficulty;
-  /** Whether this pose is currently favorited. */
   isFavorite?: boolean;
-  /** Whether this pose requires premium access. */
   isPremium?: boolean;
-  /** Card width; used for aspect-ratio calculation. */
   width?: number;
-  /** Card height override. */
   height?: number;
-  /** Called when the card body is tapped. */
   onPress?: (id: string) => void;
-  /** Called when the heart icon is tapped. */
   onFavoritePress?: (id: string) => void;
-  /** Called when the camera shortcut is tapped. */
   onCameraPress?: (id: string) => void;
   style?: StyleProp<ViewStyle>;
 }
@@ -71,7 +68,7 @@ const DIFFICULTY_BADGE: Record<PoseDifficulty, { label: string; variant: 'succes
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // ---------------------------------------------------------------------------
-// SPPoseCard
+// SPPoseCard Component
 // ---------------------------------------------------------------------------
 
 export function SPPoseCard({
@@ -90,22 +87,69 @@ export function SPPoseCard({
   style,
 }: SPPoseCardProps) {
   const { theme } = useTheme();
+  const reduceMotion = useReducedMotion();
+
   const scale = useSharedValue(1);
+  const imageScale = useSharedValue(1);
+  const heartScale = useSharedValue(1);
+  const pulseScale = useSharedValue(1);
+  const pulseOpacity = useSharedValue(0);
 
   const handlePressIn = useCallback(() => {
-    scale.value = withTiming(0.97, { duration: AnimationDurations.quick });
-  }, [scale]);
+    if (!reduceMotion) {
+      scale.value = withTiming(0.965, { duration: MotionDurations.fast });
+      imageScale.value = withTiming(1.04, { duration: MotionDurations.normal });
+    }
+  }, [reduceMotion, scale, imageScale]);
 
   const handlePressOut = useCallback(() => {
-    scale.value = withTiming(1, { duration: AnimationDurations.quick });
-  }, [scale]);
+    if (!reduceMotion) {
+      scale.value = withSpring(1, MotionSprings.snappy);
+      imageScale.value = withTiming(1, { duration: MotionDurations.normal });
+    }
+  }, [reduceMotion, scale, imageScale]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
+  const handleHeartPress = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      try {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+    }
+
+    if (!reduceMotion) {
+      heartScale.value = withSequence(
+        withTiming(0.85, { duration: 60 }),
+        withSpring(1.35, MotionSprings.bouncy),
+        withSpring(1, MotionSprings.snappy),
+      );
+      pulseScale.value = 1;
+      pulseOpacity.value = 0.8;
+      pulseScale.value = withTiming(1.8, { duration: 350 });
+      pulseOpacity.value = withTiming(0, { duration: 350 });
+    }
+
+    onFavoritePress?.(id);
+  }, [id, onFavoritePress, reduceMotion, heartScale, pulseScale, pulseOpacity]);
+
+  const animatedCardStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
+  const animatedImageStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: imageScale.value }],
+  }));
+
+  const heartAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: heartScale.value }],
+  }));
+
+  const pulseAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+    opacity: pulseOpacity.value,
+  }));
+
   const cardBg = theme.mode === 'dark' ? theme.colors.cardBackground : '#FFFFFF';
-  const imageHeight = height ? height * 0.62 : 160;
+  const imageHeight = height ? height * 0.62 : 164;
 
   return (
     <AnimatedPressable
@@ -115,24 +159,24 @@ export function SPPoseCard({
       accessibilityRole="button"
       accessibilityLabel={`${name} pose, ${category} category`}
       accessibilityHint="Double tap to view pose details"
-      style={[animatedStyle, styles.card, { backgroundColor: cardBg, width }, style]}
+      style={[styles.card, { backgroundColor: cardBg, width }, style, animatedCardStyle]}
     >
-      {/* Image */}
+      {/* Image Container with Zoom Reveal */}
       <View style={[styles.imageContainer, { height: imageHeight }]}>
         {imageUri ? (
-          <Image
+          <Animated.Image
             source={{ uri: imageUri }}
-            style={styles.image}
+            style={[styles.image, animatedImageStyle]}
             resizeMode="cover"
             accessibilityLabel={`${name} reference pose image`}
           />
         ) : (
           <View style={[styles.imagePlaceholder, { backgroundColor: theme.mode === 'dark' ? '#2A2A2A' : '#E8E3D8' }]}>
-            <Text style={[styles.placeholderIcon, { color: theme.colors.textDisabled }]}>🖼</Text>
+            <SPIcon name="image" size={32} color={theme.colors.textDisabled} />
           </View>
         )}
 
-        {/* Gradient overlay at bottom of image for legibility */}
+        {/* Gradient shadow overlay */}
         <View style={styles.imageOverlay} pointerEvents="none" />
 
         {/* Premium badge */}
@@ -142,20 +186,31 @@ export function SPPoseCard({
           </View>
         )}
 
-        {/* Favorite button — top-right */}
-        <Pressable
-          onPress={() => onFavoritePress?.(id)}
-          style={styles.favoriteButton}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-          accessibilityHint="Double tap to toggle favorite"
-          accessibilityState={{ selected: isFavorite }}
-        >
-          <Text style={[styles.heartIcon, { color: isFavorite ? Colors.error : '#FFFFFF' }]}>
-            {isFavorite ? '♥' : '♡'}
-          </Text>
-        </Pressable>
+        {/* Favorite button with signature spring pulse */}
+        <View style={styles.favoriteButtonContainer}>
+          {/* Radial pulse ring */}
+          <Animated.View style={[styles.pulseRing, pulseAnimatedStyle]} />
+
+          <Animated.View style={heartAnimatedStyle}>
+            <Pressable
+              onPress={handleHeartPress}
+              style={styles.favoriteButton}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              accessibilityHint="Double tap to toggle favorite"
+              accessibilityState={{ selected: isFavorite }}
+            >
+              <SPIcon
+                name={isFavorite ? 'heart-filled' : 'heart'}
+                size={18}
+                color={isFavorite ? Colors.error : '#FFFFFF'}
+                fill={isFavorite ? Colors.error : 'none'}
+                strokeWidth={2.2}
+              />
+            </Pressable>
+          </Animated.View>
+        </View>
       </View>
 
       {/* Content */}
@@ -181,7 +236,7 @@ export function SPPoseCard({
         </View>
       </View>
 
-      {/* Camera shortcut — bottom-right FAB */}
+      {/* Camera shortcut — bottom-right tactile FAB */}
       <Pressable
         onPress={() => onCameraPress?.(id)}
         style={[styles.cameraButton, { backgroundColor: Colors.olive }]}
@@ -190,7 +245,7 @@ export function SPPoseCard({
         accessibilityLabel={`Use ${name} pose in camera`}
         accessibilityHint="Opens the camera with this pose overlay preloaded"
       >
-        <Text style={styles.cameraIcon}>📷</Text>
+        <SPIcon name="camera" size={17} color="#FFFFFF" strokeWidth={2.2} />
       </Pressable>
     </AnimatedPressable>
   );
@@ -205,10 +260,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.card,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 4,
   },
   imageContainer: {
     width: '100%',
@@ -224,16 +279,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  placeholderIcon: {
-    fontSize: 32,
-  },
   imageOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     height: 48,
-    // Simulate gradient via opacity layers (Skia canvas needed for true gradient)
     backgroundColor: 'rgba(0,0,0,0.22)',
   },
   premiumBadge: {
@@ -241,25 +292,34 @@ const styles = StyleSheet.create({
     top: 8,
     left: 8,
   },
-  favoriteButton: {
+  favoriteButtonContainer: {
     position: 'absolute',
     top: 6,
     right: 6,
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heartIcon: {
-    fontSize: 16,
-    lineHeight: 20,
+  pulseRing: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  favoriteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     paddingHorizontal: Spacing.sm,
     paddingTop: Spacing.xs,
-    paddingBottom: Spacing.sm + 4, // extra bottom for camera button clearance
+    paddingBottom: Spacing.sm + 4,
     gap: 6,
   },
   name: {
@@ -287,9 +347,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
-  },
-  cameraIcon: {
-    fontSize: 16,
-    lineHeight: 20,
   },
 });

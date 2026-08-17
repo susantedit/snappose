@@ -3,6 +3,7 @@
  * Variants: success / warning / error / info.
  * Slide-in animation with Reanimated v3.
  * Auto-dismisses after `duration` ms (default 3500).
+ * All icons rendered via crisp SVG SPIcon components.
  * [Req 32]
  */
 
@@ -19,12 +20,11 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AnimationDurations, BorderRadius, Colors, Spacing } from '@/constants/designTokens';
+import { SPIcon } from '@/components/atoms/SPIcon';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,10 +57,10 @@ export interface SPToastProps {
 // ---------------------------------------------------------------------------
 
 const VARIANT_CONFIG: Record<SPToastVariant, { icon: string; bg: string; border: string; text: string }> = {
-  success: { icon: '✓', bg: '#1B5E20', border: Colors.scoreGreen, text: '#FFFFFF' },
-  warning: { icon: '⚠', bg: '#4A3300', border: Colors.warning, text: '#FFD54F' },
-  error: { icon: '✕', bg: '#7F0000', border: Colors.error, text: '#FFFFFF' },
-  info: { icon: 'ℹ', bg: '#0D2A4A', border: Colors.info, text: '#FFFFFF' },
+  success: { icon: 'check', bg: '#1B5E20', border: Colors.scoreGreen, text: '#FFFFFF' },
+  warning: { icon: 'warning', bg: '#4A3300', border: Colors.warning, text: '#FFD54F' },
+  error: { icon: 'close', bg: '#7F0000', border: Colors.error, text: '#FFFFFF' },
+  info: { icon: 'info', bg: '#0D2A4A', border: Colors.info, text: '#FFFFFF' },
 };
 
 // ---------------------------------------------------------------------------
@@ -141,7 +141,7 @@ export function SPToast({
       >
         {/* Icon */}
         <View style={[styles.iconWrapper, { borderColor: config.border }]}>
-          <Text style={[styles.icon, { color: config.text }]}>{config.icon}</Text>
+          <SPIcon name={config.icon} size={14} color={config.text} strokeWidth={2.4} />
         </View>
 
         {/* Content */}
@@ -171,7 +171,7 @@ export function SPToast({
           accessibilityRole="button"
           accessibilityLabel="Dismiss notification"
         >
-          <Text style={[styles.closeIcon, { color: config.text }]}>✕</Text>
+          <SPIcon name="close" size={13} color={config.text} strokeWidth={2.4} />
         </Pressable>
       </View>
     </Animated.View>
@@ -213,10 +213,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  icon: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
   content: {
     flex: 1,
   },
@@ -238,10 +234,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  closeIcon: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
 });
 
 // ---------------------------------------------------------------------------
@@ -255,16 +247,6 @@ export interface ToastState {
   variant: SPToastVariant;
 }
 
-/**
- * Convenience hook for imperative toast usage.
- *
- * @example
- * const { toastProps, showToast } = useToast();
- * // later:
- * showToast({ message: 'Saved!', variant: 'success' });
- * // in JSX:
- * <SPToast {...toastProps} onDismiss={() => toastProps.onDismiss?.()} />
- */
 export function useToast() {
   const [state, setState] = React.useState<ToastState>({
     visible: false,

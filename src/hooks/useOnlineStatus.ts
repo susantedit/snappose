@@ -22,7 +22,7 @@ async function probeConnectivity(): Promise<boolean> {
     const res = await fetch(PROBE_URL, {
       method: 'HEAD',
       cache: 'no-store',
-      signal: controller.signal,
+      signal: controller.signal as any,
     });
     clearTimeout(timer);
     return res.status === 204 || res.ok;

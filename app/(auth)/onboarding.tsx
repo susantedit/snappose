@@ -1,14 +1,12 @@
 /**
- * Onboarding screen — 3-page pager with swipe gestures, parallax/fade/slide
- * transitions, page-dot indicators, Skip button, and "Start Exploring" CTA.
+ * OnboardingScreen — Editorial Magazine Photography Onboarding.
  *
- * [Req 2.1] — Shown on first launch only; never again unless reset.
- * [Req 2.2] — Writes `onboardingCompleted: true` to MMKV on finish/skip.
- * [Req 2.3] — 3 pages, swipe-to-advance, page-dot indicators, Skip button.
- * [Req 2.4] — Skip on pages 1–2 navigates to Home and marks complete.
- * [Req 2.5] — "Start Exploring" CTA on final page.
- * [Req 2.6] — Parallax + fade + slide transitions, each ≤350 ms.
- * [Req 2.7] — Reduce Motion: fade-only, suppress parallax.
+ * Features:
+ *  • Multi-plane parallax image translation with subtle zoom
+ *  • Fluid swipe physics and gesture velocity interpolation
+ *  • Staggered typography entrance per page
+ *  • Animated pill page indicator
+ *  • Tactile button micro-interactions
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -28,84 +26,73 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  Easing,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+
 import { mmkv } from '@/database/mmkv/mmkvClient';
 import { MMKV_KEYS } from '@/database/mmkv/keys';
 import { useTheme } from '@/constants/theme';
 import {
-  AnimationDurations,
-  BorderRadius,
   Colors,
   Spacing,
   Typography,
 } from '@/constants/designTokens';
 import { SPButton } from '@/components/atoms/SPButton';
+import { SPIcon } from '@/components/atoms/SPIcon';
+import { MotionDurations, MotionEasings } from '@/constants/motion';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const PAGE_COUNT = 3;
-/** Parallax depth: background moves at 30% of the scroll speed. */
-const PARALLAX_FACTOR = 0.3;
-/** Minimum horizontal swipe distance to trigger a page change. */
-const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
-
-// ---------------------------------------------------------------------------
-// Page content
-// ---------------------------------------------------------------------------
+const PARALLAX_FACTOR = 0.35;
+const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.22;
 
 interface PageData {
   icon: string;
+  tag: string;
   title: string;
   subtitle: string;
+  imageUrl: string;
   backgroundColor: string;
 }
 
 const PAGES: PageData[] = [
   {
-    icon: '🤖',
-    title: 'AI-Powered Pose Matching',
+    icon: 'ai',
+    tag: 'AI POSE MATCHING',
+    title: 'Match Any Pose in Real Time',
     subtitle:
-      'Our on-device AI detects 33 body landmarks in real time and scores how closely you match any reference pose — no internet needed.',
+      'On-device AI analyzes 33 body landmarks instantly, giving you real-time visual alignment cues without needing an internet connection.',
+    imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=900&auto=format&fit=crop&q=80',
     backgroundColor: Colors.cream,
   },
   {
-    icon: '📸',
-    title: 'Automatic Capture',
+    icon: 'camera',
+    tag: 'HANDS-FREE SHUTTER',
+    title: 'Perfect Alignment, Auto Captured',
     subtitle:
-      'When your pose score hits the sweet spot, the app counts down and snaps the perfect shot hands-free — no more fumbling with timers.',
+      'Hold your pose — when your alignment score hits the sweet spot, Snap Pose counts down and captures your shot automatically.',
+    imageUrl: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=900&auto=format&fit=crop&q=80',
     backgroundColor: '#EEF0E8',
   },
   {
-    icon: '⬇️',
-    title: 'Download & Use Offline',
+    icon: 'download',
+    tag: 'FULL OFFLINE FREEDOM',
+    title: 'Download & Pose Anywhere',
     subtitle:
-      'Download pose packs once and use them anywhere — on the mountain, at the beach, or wherever the shot takes you.',
+      'Save curated packs offline and strike confident, professional poses wherever your travels take you — from city cafes to mountain summits.',
+    imageUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=900&auto=format&fit=crop&q=80',
     backgroundColor: '#E8ECE0',
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Mark onboarding done in MMKV and replace the back-stack with Home. */
 function completeOnboarding(): void {
   mmkv.set(MMKV_KEYS.ONBOARDING_COMPLETED, true);
   router.replace('/(tabs)');
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-/** Single onboarding page content (icon, title, body). */
 function OnboardingPage({
   page,
   index,
@@ -114,11 +101,10 @@ function OnboardingPage({
 }: {
   page: PageData;
   index: number;
-  scrollX: Animated.SharedValue<number>;
+  scrollX: SharedValue<number>;
   reduceMotion: boolean;
 }) {
-  // Parallax: icon/content shifts at PARALLAX_FACTOR as the pager scrolls
-  const parallaxStyle = useAnimatedStyle(() => {
+  const imageParallaxStyle = useAnimatedStyle(() => {
     if (reduceMotion) return {};
 
     const inputRange = [
@@ -134,15 +120,23 @@ function OnboardingPage({
       Extrapolation.CLAMP,
     );
 
-    return { transform: [{ translateX }] };
+    const scale = interpolate(
+      scrollX.value,
+      inputRange,
+      [0.92, 1, 0.92],
+      Extrapolation.CLAMP,
+    );
+
+    return {
+      transform: [{ translateX }, { scale }],
+    };
   });
 
-  // Fade: page fades in/out as it enters/leaves view
-  const fadeStyle = useAnimatedStyle(() => {
+  const textFadeStyle = useAnimatedStyle(() => {
     const inputRange = [
-      (index - 1) * SCREEN_WIDTH,
+      (index - 0.6) * SCREEN_WIDTH,
       index * SCREEN_WIDTH,
-      (index + 1) * SCREEN_WIDTH,
+      (index + 0.6) * SCREEN_WIDTH,
     ];
 
     const opacity = interpolate(
@@ -152,7 +146,17 @@ function OnboardingPage({
       Extrapolation.CLAMP,
     );
 
-    return { opacity };
+    const translateY = interpolate(
+      scrollX.value,
+      inputRange,
+      [24, 0, -24],
+      Extrapolation.CLAMP,
+    );
+
+    return {
+      opacity,
+      transform: [{ translateY }],
+    };
   });
 
   return (
@@ -162,39 +166,45 @@ function OnboardingPage({
       accessibilityRole="none"
       accessibilityLabel={`Page ${index + 1} of ${PAGE_COUNT}: ${page.title}`}
     >
-      <Animated.View style={[styles.pageContent, fadeStyle, parallaxStyle]}>
-        {/* Illustration placeholder */}
-        <View
-          style={styles.illustrationContainer}
-          accessibilityElementsHidden={true}
-          importantForAccessibility="no-hide-descendants"
-        >
-          <Text style={styles.illustrationIcon}>{page.icon}</Text>
-        </View>
+      {/* Editorial Photo Frame with Parallax */}
+      <View style={styles.photoFrame}>
+        <Animated.Image
+          source={{ uri: page.imageUrl }}
+          style={[styles.pageImage, imageParallaxStyle]}
+          resizeMode="cover"
+        />
+        <View style={styles.photoGradientOverlay} />
 
+        {/* Floating Category Tag Badge */}
+        <View style={styles.floatingTag}>
+          <SPIcon name={page.icon} size={14} color="#FFF" strokeWidth={2.4} />
+          <Text style={styles.floatingTagText}>{page.tag}</Text>
+        </View>
+      </View>
+
+      {/* Editorial Text Content */}
+      <Animated.View style={[styles.pageContent, textFadeStyle]}>
         <Text style={styles.pageTitle} accessibilityRole="header">
           {page.title}
         </Text>
-
         <Text style={styles.pageSubtitle}>{page.subtitle}</Text>
       </Animated.View>
     </View>
   );
 }
 
-/** Dot indicator row showing current page position. */
 function DotIndicator({
   scrollX,
   count,
 }: {
-  scrollX: Animated.SharedValue<number>;
+  scrollX: SharedValue<number>;
   count: number;
 }) {
   return (
     <View
       style={styles.dotRow}
       accessibilityRole="none"
-      accessibilityLabel={`Page indicator`}
+      accessibilityLabel="Page indicator"
     >
       {Array.from({ length: count }).map((_, i) => (
         <AnimatedDot key={i} index={i} scrollX={scrollX} />
@@ -208,7 +218,7 @@ function AnimatedDot({
   scrollX,
 }: {
   index: number;
-  scrollX: Animated.SharedValue<number>;
+  scrollX: SharedValue<number>;
 }) {
   const animStyle = useAnimatedStyle(() => {
     const inputRange = [
@@ -220,14 +230,14 @@ function AnimatedDot({
     const width = interpolate(
       scrollX.value,
       inputRange,
-      [8, 24, 8],
+      [8, 28, 8],
       Extrapolation.CLAMP,
     );
 
     const opacity = interpolate(
       scrollX.value,
       inputRange,
-      [0.4, 1, 0.4],
+      [0.35, 1, 0.35],
       Extrapolation.CLAMP,
     );
 
@@ -242,25 +252,14 @@ function AnimatedDot({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main screen
-// ---------------------------------------------------------------------------
-
-/**
- * OnboardingScreen — [Req 2]
- */
 export default function OnboardingScreen() {
   const { theme } = useTheme();
 
-  // Shared values
-  /** Continuous scroll position in px (0 = page 0, SCREEN_WIDTH = page 1, …) */
   const scrollX = useSharedValue(0);
-  /** Current integer page index, mirrored into React state for render decisions. */
   const currentPageRef = useRef(0);
   const [currentPage, setCurrentPage] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
 
-  // Detect Reduce Motion setting [Req 2.7]
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
       setReduceMotion(enabled);
@@ -276,21 +275,16 @@ export default function OnboardingScreen() {
     return () => sub.remove();
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Navigation helpers
-  // ---------------------------------------------------------------------------
-
-  /** Animate to the target page index. */
   const goToPage = useCallback(
     (page: number) => {
       const clampedPage = Math.max(0, Math.min(page, PAGE_COUNT - 1));
       const duration = reduceMotion
-        ? AnimationDurations.quick          // fade-only is much quicker
-        : AnimationDurations.long;          // ≤350 ms  [Req 2.6]
+        ? MotionDurations.fast
+        : MotionDurations.medium;
 
       scrollX.value = withTiming(
         clampedPage * SCREEN_WIDTH,
-        { duration, easing: Easing.out(Easing.cubic) },
+        { duration, easing: MotionEasings.outStandard },
         (finished) => {
           if (finished) {
             runOnJS(setCurrentPage)(clampedPage);
@@ -303,10 +297,6 @@ export default function OnboardingScreen() {
     [reduceMotion, scrollX],
   );
 
-  // ---------------------------------------------------------------------------
-  // Swipe gesture  [Req 2.3]
-  // ---------------------------------------------------------------------------
-
   const panStartX = useSharedValue(0);
 
   const panGesture = Gesture.Pan()
@@ -316,43 +306,34 @@ export default function OnboardingScreen() {
       panStartX.value = scrollX.value;
     })
     .onUpdate((event) => {
-      // Drag the pager content in real time, clamped to valid range
       const nextX = panStartX.value - event.translationX;
       const clamped = Math.max(0, Math.min(nextX, (PAGE_COUNT - 1) * SCREEN_WIDTH));
       scrollX.value = clamped;
     })
     .onEnd((event) => {
-      const velocityThreshold = 500;
+      const velocityThreshold = 450;
       const page = currentPageRef.current;
 
       if (
         event.velocityX < -velocityThreshold ||
         event.translationX < -SWIPE_THRESHOLD
       ) {
-        // Swiped left → next page
         const next = Math.min(page + 1, PAGE_COUNT - 1);
         runOnJS(goToPage)(next);
       } else if (
         event.velocityX > velocityThreshold ||
         event.translationX > SWIPE_THRESHOLD
       ) {
-        // Swiped right → previous page
         const prev = Math.max(page - 1, 0);
         runOnJS(goToPage)(prev);
       } else {
-        // Snap back to current page
         runOnJS(goToPage)(page);
       }
     });
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
-
   const isLastPage = currentPage === PAGE_COUNT - 1;
   const showSkip = !isLastPage;
 
-  // Pager container slides to track scrollX
   const pagerStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: -scrollX.value }],
   }));
@@ -361,8 +342,12 @@ export default function OnboardingScreen() {
     <View style={[styles.root, { backgroundColor: PAGES[currentPage]?.backgroundColor ?? Colors.cream }]}>
       <StatusBar style="dark" backgroundColor="transparent" translucent />
 
-      {/* ── Skip button  [Req 2.3, 2.4] ── */}
+      {/* Top Header Bar */}
       <View style={styles.headerRow}>
+        <View style={styles.brandBadge}>
+          <Text style={styles.brandBadgeText}>SNAP POSE</Text>
+        </View>
+
         {showSkip ? (
           <Pressable
             style={styles.skipButton}
@@ -377,12 +362,11 @@ export default function OnboardingScreen() {
             </Text>
           </Pressable>
         ) : (
-          /* Invisible spacer so header row height stays constant */
           <View style={styles.skipButton} />
         )}
       </View>
 
-      {/* ── Pager ── */}
+      {/* Main Viewport Carousel */}
       <GestureDetector gesture={panGesture}>
         <View style={styles.pagerViewport} accessibilityRole="adjustable">
           <Animated.View style={[styles.pagerStrip, pagerStyle]}>
@@ -399,17 +383,14 @@ export default function OnboardingScreen() {
         </View>
       </GestureDetector>
 
-      {/* ── Bottom controls ── */}
+      {/* Footer Navigation */}
       <View style={styles.footer}>
-        {/* Dot indicator  [Req 2.3] */}
         <DotIndicator scrollX={scrollX} count={PAGE_COUNT} />
 
-        {/* CTA button — "Next" on pages 0–1, "Start Exploring" on page 2 */}
         <View style={styles.ctaContainer}>
           {isLastPage ? (
-            /* "Start Exploring"  [Req 2.5] */
             <SPButton
-              label="Start Exploring"
+              label="Start Exploring Poses →"
               variant="primary"
               size="lg"
               accessibilityLabel="Start Exploring"
@@ -418,9 +399,8 @@ export default function OnboardingScreen() {
               style={styles.ctaButton}
             />
           ) : (
-            /* "Next" navigation aid for users who prefer tapping over swiping */
             <SPButton
-              label="Next"
+              label="Continue"
               variant="secondary"
               size="lg"
               accessibilityLabel={`Go to page ${currentPage + 2} of ${PAGE_COUNT}`}
@@ -435,24 +415,30 @@ export default function OnboardingScreen() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-
-  // ── Header ──
   headerRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
     paddingTop: Platform.OS === 'android' ? Spacing.xxxl : Spacing.xxl,
-    paddingBottom: Spacing.sm,
-    minHeight: 60,
+    paddingBottom: Spacing.xs,
+    minHeight: 64,
+  },
+  brandBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(101, 116, 74, 0.12)',
+  },
+  brandBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.olive,
+    letterSpacing: 1.2,
   },
   skipButton: {
     paddingVertical: Spacing.xs,
@@ -464,96 +450,107 @@ const styles = StyleSheet.create({
   },
   skipText: {
     fontSize: Typography.sizes.body,
-    fontWeight: Typography.weights.medium,
+    fontWeight: '600',
   },
-
-  // ── Pager ──
   pagerViewport: {
     flex: 1,
     overflow: 'hidden',
   },
   pagerStrip: {
     flexDirection: 'row',
-    // Width is PAGE_COUNT * SCREEN_WIDTH so all pages lay out side by side
     width: SCREEN_WIDTH * PAGE_COUNT,
     flex: 1,
   },
-
-  // ── Page ──
   page: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+  },
+  photoFrame: {
+    width: SCREEN_WIDTH - Spacing.xl * 2,
+    height: Math.min(360, SCREEN_HEIGHT * 0.42),
+    borderRadius: 28,
+    overflow: 'hidden',
+    position: 'relative',
+    marginBottom: Spacing.xl,
+    shadowColor: Colors.dark,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  pageImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoGradientOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+  },
+  floatingTag: {
+    position: 'absolute',
+    bottom: Spacing.md,
+    left: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(23, 24, 19, 0.85)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  floatingTagText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.1,
   },
   pageContent: {
     alignItems: 'center',
-    paddingHorizontal: Spacing.xxl,
+    paddingHorizontal: Spacing.md,
   },
-
-  // Illustration
-  illustrationContainer: {
-    width: 160,
-    height: 160,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.olive + '1A', // 10% opacity tint
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.xxl,
-    // Subtle shadow
-    shadowColor: Colors.dark,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  illustrationIcon: {
-    fontSize: 72,
-  },
-
-  // Text
   pageTitle: {
-    fontSize: Typography.sizes.h2,
-    fontWeight: Typography.weights.bold,
+    fontSize: 26,
+    fontWeight: '800',
     color: Colors.dark,
     textAlign: 'center',
-    marginBottom: Spacing.md,
-    lineHeight: Typography.sizes.h2 * 1.2,
+    marginBottom: Spacing.sm,
+    lineHeight: 32,
+    letterSpacing: -0.4,
   },
   pageSubtitle: {
-    fontSize: Typography.sizes.body,
-    fontWeight: Typography.weights.regular,
+    fontSize: 14,
+    fontWeight: '500',
     color: Colors.textSecondary,
     textAlign: 'center',
-    lineHeight: Typography.sizes.body * 1.6,
+    lineHeight: 22,
   },
-
-  // ── Footer ──
   footer: {
     alignItems: 'center',
     paddingHorizontal: Spacing.xl,
     paddingBottom: Platform.OS === 'android' ? Spacing.xxxl : Spacing.xxl,
-    gap: Spacing.xl,
+    gap: Spacing.lg,
   },
-
-  // Dots
   dotRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.xs,
+    gap: 6,
     height: 24,
   },
   dot: {
     height: 8,
-    borderRadius: BorderRadius.full,
+    borderRadius: 4,
     backgroundColor: Colors.olive,
   },
-
-  // CTA
   ctaContainer: {
     width: '100%',
   },
   ctaButton: {
     width: '100%',
+    borderRadius: 18,
   },
 });

@@ -20,10 +20,14 @@
     "allowImportingTsExtensions": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": [
+        "src/*"
+      ]
     },
     "jsx": "react-native",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "target": "ES2022",
     "skipLibCheck": true
   },
@@ -31,10 +35,20 @@
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.d.ts",
-    "expo-env.d.ts"
+    "expo-env.d.ts",
+    "nativewind-env.d.ts",
+    ".expo/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
-    "backend"
+    "website",
+    "backend",
+    "e2e",
+    "app",
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js",
+    "src/__pbt__",
+    "**/__tests__"
   ]
 }

@@ -131,6 +131,10 @@ export class VoiceCoachService implements VoiceCoach {
     return this._enabled;
   }
 
+  get isEnabled(): boolean {
+    return this._enabled;
+  }
+
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------

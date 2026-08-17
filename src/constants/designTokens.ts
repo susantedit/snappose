@@ -15,6 +15,16 @@ export const Colors = {
   olive: '#65744A',
   /** Dark olive (secondary accent / navigation active) */
   oliveDark: '#4F5B38',
+  /** Forest green */
+  forest: '#28351D',
+  /** Muted gray/gold */
+  muted: '#8A8A78',
+  /** Gold accent */
+  gold: '#C99A45',
+  /** Neon Lime brand accent */
+  lime: '#B7FF00',
+  /** Electric Cyan brand accent */
+  cyan: '#00D9FF',
   /** Dark-mode accent */
   darkAccent: '#7E9261',
   /** Near-black app dark */

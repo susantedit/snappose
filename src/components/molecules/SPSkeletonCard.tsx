@@ -13,6 +13,7 @@ import Animated, {
   withRepeat,
   withTiming,
   Easing,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { useTheme } from '@/constants/theme';
 import { BorderRadius } from '@/constants/designTokens';
@@ -43,7 +44,7 @@ interface ShimmerLineProps {
   height?: number;
   borderRadius?: number;
   style?: StyleProp<ViewStyle>;
-  shimmerProgress: Animated.SharedValue<number>;
+  shimmerProgress: SharedValue<number>;
   baseColor: string;
   highlightColor: string;
 }

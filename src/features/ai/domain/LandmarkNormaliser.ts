@@ -33,9 +33,14 @@ const CONFIDENCE_THRESHOLD = 0.60;
 // Public API
 // ---------------------------------------------------------------------------
 
+export type NormalisedResultLandmarks = PoseLandmarks & {
+  landmarks: PoseLandmarks;
+  referenceScale: number;
+};
+
 export interface NormaliseResult {
   ok: true;
-  normalised: NormalisedLandmarks;
+  normalised: NormalisedResultLandmarks;
 }
 
 export interface NormaliseError {
@@ -53,9 +58,10 @@ export type NormaliseOutcome = NormaliseResult | NormaliseError;
  *  - The reference scale (shoulder-to-hip distance) is near-zero
  */
 export function normaliseLandmarks(
-  raw: PoseLandmarks,
+  rawInput: PoseLandmarks | NormalisedLandmarks,
   aspectRatio = 1.0,
 ): NormaliseOutcome {
+  const raw = (Array.isArray(rawInput) ? rawInput : rawInput.landmarks) as PoseLandmarks;
   // ── Confidence gate ──────────────────────────────────────────────────────
   const confidentCount = raw.filter((lm) => lm.visibility >= CONFIDENCE_THRESHOLD).length;
   if (confidentCount < MIN_CONFIDENT_LANDMARKS) {
@@ -86,7 +92,7 @@ export function normaliseLandmarks(
   const torsoAngle = Math.atan2(dx, -dy); // atan2(horizontal, -vertical)
 
   // ── Step 2-4: Translate → Scale → Rotate → Aspect ───────────────────────
-  const normalised = raw.map((lm): Landmark => {
+  const normalisedArr = raw.map((lm): Landmark => {
     // 1. Translate to hip-midpoint origin
     let x = lm.x - hipMidX;
     let y = lm.y - hipMidY;
@@ -107,11 +113,15 @@ export function normaliseLandmarks(
     x *= aspectRatio;
 
     return { x, y, z: lm.z / referenceScale, visibility: lm.visibility };
-  }) as PoseLandmarks;
+  });
+
+  const normalised = normalisedArr as unknown as NormalisedResultLandmarks;
+  normalised.landmarks = normalisedArr as unknown as PoseLandmarks;
+  normalised.referenceScale = referenceScale;
 
   return {
     ok: true,
-    normalised: { landmarks: normalised, referenceScale },
+    normalised,
   };
 }
 

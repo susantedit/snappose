@@ -1,9 +1,12 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
+import fs from 'fs';
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
+const hasGoogleServices = fs.existsSync('./google-services.json');
+
+export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> => ({
   ...config,
-  name: 'Snap Pose',
-  slug: 'snap-pose',
+  name: 'POSEHANUM',
+  slug: 'posehanum',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
@@ -13,28 +16,25 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     resizeMode: 'contain',
     backgroundColor: '#F6F1E7',
   },
-  scheme: 'snappose',
+  scheme: 'posehanum',
   assetBundlePatterns: ['**/*'],
   ios: {
     supportsTablet: false,
     bundleIdentifier: 'com.example.snappose',
     infoPlist: {
       NSCameraUsageDescription:
-        'Snap Pose needs camera access to overlay pose guides and capture photos.',
+        'POSEHANUM needs camera access to overlay pose guides and capture photos.',
       NSMicrophoneUsageDescription:
-        'Snap Pose needs microphone access for video capture.',
+        'POSEHANUM needs microphone access for voice-guided coaching.',
       NSPhotoLibraryUsageDescription:
-        'Snap Pose saves captured photos to your photo library.',
+        'POSEHANUM saves captured photos to your photo library.',
       NSPhotoLibraryAddUsageDescription:
-        'Snap Pose saves captured photos to your photo library.',
+        'POSEHANUM saves captured photos to your photo library.',
     },
   },
   android: {
     package: 'com.example.snappose',
     versionCode: 1,
-    compileSdkVersion: 34,
-    targetSdkVersion: 34,
-    minSdkVersion: 26,
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#F6F1E7',
@@ -51,11 +51,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'android.permission.ACCESS_NETWORK_STATE',
       'android.permission.RECEIVE_BOOT_COMPLETED',
     ],
-    googleServicesFile: './google-services.json',
+    googleServicesFile: hasGoogleServices ? './google-services.json' : undefined,
   },
   web: {
     bundler: 'metro',
-    output: 'static',
+    output: 'single',
     favicon: './assets/favicon.png',
   },
   plugins: [
@@ -93,8 +93,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     '@react-native-firebase/app',
     '@react-native-firebase/crashlytics',
-    'react-native-google-mobile-ads',
   ],
+  'react-native-google-mobile-ads': {
+    android_app_id: process.env.EXPO_PUBLIC_ADMOB_APP_ID,
+    ios_app_id: process.env.EXPO_PUBLIC_ADMOB_APP_ID,
+  },
   experiments: {
     typedRoutes: true,
   },
@@ -102,13 +105,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   updates: {
     url: 'https://u.expo.dev/YOUR_EAS_PROJECT_ID',
     enabled: true,
-    // 'fingerprintRuntime' ties the OTA bundle to the exact native build fingerprint,
+    // 'fingerprint' ties the OTA bundle to the exact native build fingerprint,
     // preventing mismatched JS from loading on incompatible native code.
     checkAutomatically: 'ON_LOAD',
     fallbackToCacheTimeout: 0,
   },
   runtimeVersion: {
-    policy: 'fingerprintRuntime',
+    policy: 'fingerprint',
   },
   extra: {
     mongodbApiUrl: process.env.EXPO_PUBLIC_MONGODB_API_URL,
@@ -119,3 +122,4 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   owner: 'snappose',
 });
+

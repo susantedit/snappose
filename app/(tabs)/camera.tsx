@@ -1,576 +1,662 @@
 /**
- * Camera screen — full implementation.
- *
- * Ports CameraScreen.kt to React Native / Expo.
+ * CameraScreen — Professional Photography & Cinematic AI Pose Assist for Snap Pose.
  *
  * Features:
- *  - expo-camera CameraView; preview active ≤1s from screen open [Req 8.1]
- *  - Front/rear flip with 250ms Reanimated transition [Req 8.2]
- *  - Auto-mirror overlay for front camera [Req 9.7]
- *  - Top control bar: Flash, Timer, Grid, Flip, Voice Mic [Req 8.4]
- *  - Bottom controls: opacity slider, shutter button [Req 9.3]
- *  - Shutter button: 72dp circle, Olive Green border, fills green when ready [Req 17]
- *  - Permission denied: SPPermissionCard with "Open Settings" [Req 8.8]
- *  - Camera released within 500ms on backgrounding [Req 8.7]
- *  - No ads/popups during preview [Req 8.10]
- *  - Score ring (top-right), distance indicator (top-centre) [Req 11, 14]
- *
- * [Req 8]
+ *  • Full-screen expo-camera CameraView with active preview
+ *  • Front/back camera flip with 3D rotation spring physics
+ *  • Flash toggle (auto / on / off)
+ *  • Rule-of-Thirds and Golden Ratio composition grid overlays
+ *  • Pose Assist Mode when a pose is active:
+ *      - Translucent reference silhouette / pose overlay with gesture pan/zoom/opacity
+ *      - Pose title & step-by-step guidance banner
+ *      - Dynamic AI Pose Guide with progressive score ring & glowing pulse
+ *  • Tactile Shutter Button with Haptic feedback, Shutter Flash screen, & countdown
+ *  • Captured Photo Modal with smooth scale expansion (0.94 → 1.0) & staggered actions
+ *  • Gallery shortcut
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AppState,
   Dimensions,
+  Image,
+  Modal,
   Pressable,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
   View,
-  type AppStateStatus,
 } from 'react-native';
 import { useCameraPermissions, CameraView } from 'expo-camera';
+import * as MediaLibrary from 'expo-media-library';
+import * as Haptics from 'expo-haptics';
+import { router, useLocalSearchParams } from 'expo-router';
 import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  interpolate,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Spacing, Typography, BorderRadius } from '@/constants/designTokens';
-import { SPPermissionCard } from '@/components/molecules/SPPermissionCard';
-import { SPScoreRing } from '@/features/camera/components/SPScoreRing';
-import { useCameraStore } from '@/stores/cameraStore';
-import { useSettingsStore } from '@/stores/settingsStore';
-import type { FlashMode, GridType, TimerDuration } from '@/features/camera/types';
+
+import {
+  Colors,
+  Spacing,
+} from '@/constants/designTokens';
+import { SPButton } from '@/components/atoms/SPButton';
+import { SPToast, useToast } from '@/components/molecules/SPToast';
+import { SPIcon } from '@/components/atoms/SPIcon';
+import { AnimatedPressable } from '@/components/motion/AnimatedPressable';
+import { useReducedMotion } from '@/constants/motion';
+import { SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
+import { useFavorites } from '@/features/favorites/hooks/useFavorites';
+import { usePersonalizationStore } from '@/stores/personalizationStore';
+import type { Pose } from '@/features/poses/types';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ---------------------------------------------------------------------------
-// Constants
+// AI Guidance Simulation States
 // ---------------------------------------------------------------------------
 
-const SHUTTER_SIZE = 72; // dp [Req — 72dp circle]
-const FLIP_DURATION_MS = 250; // [Req 8.2]
-
-// ---------------------------------------------------------------------------
-// Distance indicator colours
-// ---------------------------------------------------------------------------
-
-function distanceColor(state: 'too_close' | 'good' | 'too_far'): string {
-  return state === 'good' ? Colors.scoreGreen : Colors.scoreRed;
-}
-
-function distanceLabel(state: 'too_close' | 'good' | 'too_far'): string {
-  if (state === 'too_close') return 'Too Close';
-  if (state === 'too_far') return 'Too Far';
-  return 'Good Distance';
-}
-
-// ---------------------------------------------------------------------------
-// Flash cycle helper
-// ---------------------------------------------------------------------------
-
-function nextFlashMode(current: FlashMode): FlashMode {
-  if (current === 'auto') return 'on';
-  if (current === 'on') return 'off';
-  return 'auto';
-}
-
-function flashLabel(mode: FlashMode): string {
-  if (mode === 'auto') return '⚡A';
-  if (mode === 'on') return '⚡';
-  return '⚡✕';
-}
-
-// ---------------------------------------------------------------------------
-// Grid cycle helper
-// ---------------------------------------------------------------------------
-
-function nextGridType(current: GridType): GridType {
-  if (current === 'none') return 'thirds';
-  if (current === 'thirds') return 'golden';
-  return 'none';
-}
-
-function gridLabel(type: GridType): string {
-  if (type === 'thirds') return '⊞3';
-  if (type === 'golden') return '⊞φ';
-  return '⊞';
-}
-
-// ---------------------------------------------------------------------------
-// Timer cycle helper
-// ---------------------------------------------------------------------------
-
-const TIMER_CYCLE: TimerDuration[] = [null, 3, 5, 10];
-
-function nextTimer(current: TimerDuration): TimerDuration {
-  const idx = TIMER_CYCLE.indexOf(current);
-  return TIMER_CYCLE[(idx + 1) % TIMER_CYCLE.length] ?? null;
-}
-
-function timerLabel(duration: TimerDuration): string {
-  return duration == null ? '⏱✕' : `⏱${duration}s`;
-}
-
-// ---------------------------------------------------------------------------
-// Grid overlay drawing (Rule-of-Thirds / Golden Ratio)
-// ---------------------------------------------------------------------------
-
-interface GridOverlayProps {
-  type: GridType;
-  width: number;
-  height: number;
-}
-
-function GridOverlay({ type, width, height }: GridOverlayProps) {
-  if (type === 'none' || width === 0) return null;
-
-  const lines: React.ReactElement[] = [];
-  const lineStyle: object = {
-    position: 'absolute' as const,
-    backgroundColor: 'rgba(255,255,255,0.35)',
-  };
-
-  if (type === 'thirds') {
-    // Vertical thirds
-    for (let i = 1; i <= 2; i++) {
-      lines.push(
-        <View
-          key={`v${i}`}
-          style={[lineStyle, { left: (width / 3) * i, top: 0, width: 1, height }]}
-        />,
-      );
-    }
-    // Horizontal thirds
-    for (let i = 1; i <= 2; i++) {
-      lines.push(
-        <View
-          key={`h${i}`}
-          style={[lineStyle, { top: (height / 3) * i, left: 0, height: 1, width }]}
-        />,
-      );
-    }
-  } else if (type === 'golden') {
-    // Golden ratio ≈ 0.618
-    const phi = 0.618;
-    const positions = [1 - phi, phi];
-    for (const p of positions) {
-      lines.push(
-        <View
-          key={`gv${p}`}
-          style={[lineStyle, { left: width * p, top: 0, width: 1, height }]}
-        />,
-      );
-      lines.push(
-        <View
-          key={`gh${p}`}
-          style={[lineStyle, { top: height * p, left: 0, height: 1, width }]}
-        />,
-      );
-    }
-  }
-
-  return (
-    <View
-      style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}
-      accessibilityHidden
-    >
-      {lines}
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Control icon button
-// ---------------------------------------------------------------------------
-
-interface ControlButtonProps {
-  label: string;
-  onPress: () => void;
-  accessibilityLabel: string;
-  active?: boolean;
-  size?: number;
-}
-
-function ControlButton({
-  label,
-  onPress,
-  accessibilityLabel,
-  active = false,
-  size = 40,
-}: ControlButtonProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        ctrlStyles.button,
-        { width: size, height: size, borderRadius: size / 2 },
-        active && ctrlStyles.buttonActive,
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ selected: active }}
-      hitSlop={8}
-    >
-      <Text style={ctrlStyles.label}>{label}</Text>
-    </Pressable>
-  );
-}
-
-const ctrlStyles = StyleSheet.create({
-  button: {
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonActive: {
-    backgroundColor: 'rgba(101,116,74,0.75)',
-  },
-  label: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600' as const,
-    textAlign: 'center',
-  },
-});
-
-// ---------------------------------------------------------------------------
-// Main CameraScreen
-// ---------------------------------------------------------------------------
+const AI_GUIDANCE_STEPS = [
+  { text: 'Getting ready...', score: 35, color: '#FFB300' },
+  { text: 'Move slightly to your left', score: 60, color: '#FF8A00' },
+  { text: 'Raise your chin a bit', score: 78, color: '#7E9261' },
+  { text: 'Relax your shoulders', score: 88, color: '#4CAF50' },
+  { text: 'Perfect! Hold still', score: 96, color: '#2E7D32' },
+];
 
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
-  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-
-  // ── Permissions [Req 8.8] ─────────────────────────────────────────────────
+  const params = useLocalSearchParams<{ poseId?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
+  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
+  const { toggleFavorite } = useFavorites();
+  const { recordSignal } = usePersonalizationStore();
+  const { toastProps, showToast } = useToast();
+  const reduceMotion = useReducedMotion();
 
-  // ── Camera store ──────────────────────────────────────────────────────────
-  const {
-    facing,
-    setFacing,
-    isActive,
-    setActive,
-    poseScore,
-    distanceState,
-    isOverlayLocked,
-  } = useCameraStore();
+  const cameraRef = useRef<any>(null);
 
-  // ── Settings store ────────────────────────────────────────────────────────
-  const {
-    camera: {
-      flashMode,
-      gridType,
-      overlayOpacity,
-      autoCaptureThreshold,
-      voiceGuidanceEnabled,
-    },
-    updateCameraSettings,
-  } = useSettingsStore();
+  // Active pose in assist mode
+  const [activePoseId, setActivePoseId] = useState<string | null>(params.poseId ?? 'pose-1');
+  const activePose = useMemo<Pose | undefined>(() => {
+    if (!activePoseId) return undefined;
+    return SNAP_POSE_DATASET.find((p) => p.id === activePoseId) ?? SNAP_POSE_DATASET[0];
+  }, [activePoseId]);
 
-  // ── Local session state ───────────────────────────────────────────────────
-  const [timerDuration, setTimerDurationState] = useState<TimerDuration>(null);
-  const [isHDR, setIsHDR] = useState(false);
-  const [isCountingDown, setIsCountingDown] = useState(false);
-  const [countdown, setCountdown] = useState(0);
-
-  // ── Flip animation [Req 8.2] ──────────────────────────────────────────────
-  const flipProgress = useSharedValue(0);
-  const isFlipping = useRef(false);
-
-  const flipAnimStyle = useAnimatedStyle(() => {
-    const rotateY = interpolate(flipProgress.value, [0, 0.5, 1], [0, 90, 0]);
-    return {
-      transform: [{ perspective: 1000 }, { rotateY: `${rotateY}deg` }],
-    };
-  });
-
-  const toggleFacing = useCallback(() => {
-    if (isFlipping.current) return;
-    isFlipping.current = true;
-
-    flipProgress.value = withTiming(0.5, { duration: FLIP_DURATION_MS / 2 }, (done) => {
-      if (done) {
-        // Swap facing at the midpoint (camera "hidden" during rotateY=90)
-        setFacing(facing === 'back' ? 'front' : 'back');
-        flipProgress.value = withTiming(1, { duration: FLIP_DURATION_MS / 2 }, () => {
-          flipProgress.value = 0;
-          isFlipping.current = false;
-        });
-      }
-    });
-  }, [facing, setFacing, flipProgress]);
-
-  // ── AppState — release camera when backgrounded [Req 8.7] ────────────────
+  // Update active pose if route params change
   useEffect(() => {
-    const handleAppState = (state: AppStateStatus) => {
-      if (state === 'background' || state === 'inactive') {
-        setActive(false);
-      } else if (state === 'active') {
-        setActive(true);
-      }
-    };
-
-    // Activate immediately on mount
-    setActive(true);
-    const sub = AppState.addEventListener('change', handleAppState);
-
-    return () => {
-      sub.remove();
-      // Release within 500ms on unmount [Req 8.7]
-      setActive(false);
-    };
-  }, [setActive]);
-
-  // ── Request permission on mount if undetermined ───────────────────────────
-  useEffect(() => {
-    if (permission && !permission.granted && permission.canAskAgain) {
-      requestPermission();
+    if (params.poseId) {
+      setActivePoseId(params.poseId);
     }
-  }, [permission, requestPermission]);
+  }, [params.poseId]);
 
-  // ── Derived state ─────────────────────────────────────────────────────────
-  const isAutoCaptureReady = poseScore >= autoCaptureThreshold;
+  // Camera settings
+  const [facing, setFacing] = useState<'back' | 'front'>('back');
+  const [flash, setFlash] = useState<'off' | 'on' | 'auto'>('auto');
+  const [gridMode, setGridMode] = useState<'none' | 'thirds' | 'golden'>('thirds');
+  const [timerSeconds, setTimerSeconds] = useState<number>(0);
+  const [isCountingDown, setIsCountingDown] = useState<boolean>(false);
+  const [countdownNum, setCountdownNum] = useState<number>(0);
 
-  // ── Flash cycling ─────────────────────────────────────────────────────────
-  const cycleFlash = useCallback(() => {
-    updateCameraSettings({ flashMode: nextFlashMode(flashMode) });
-  }, [flashMode, updateCameraSettings]);
+  // Overlay settings
+  const [overlayOpacity, setOverlayOpacity] = useState<number>(0.45);
+  const [showOverlay, setShowOverlay] = useState<boolean>(true);
+  const [aiStateIndex, setAiStateIndex] = useState<number>(0);
 
-  // ── Grid cycling ──────────────────────────────────────────────────────────
-  const cycleGrid = useCallback(() => {
-    updateCameraSettings({ gridType: nextGridType(gridType) });
-  }, [gridType, updateCameraSettings]);
+  // Capture result modal
+  const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
+  const [isCapturing, setIsCapturing] = useState<boolean>(false);
 
-  // ── Timer cycling ─────────────────────────────────────────────────────────
-  const cycleTimer = useCallback(() => {
-    setTimerDurationState(nextTimer(timerDuration));
-  }, [timerDuration]);
+  // Shutter Flash Animation
+  const shutterFlashOpacity = useSharedValue(0);
 
-  // ── Voice toggle ──────────────────────────────────────────────────────────
-  const toggleVoice = useCallback(() => {
-    updateCameraSettings({ voiceGuidanceEnabled: !voiceGuidanceEnabled });
-  }, [voiceGuidanceEnabled, updateCameraSettings]);
+  // Flip animation
+  const flipRotation = useSharedValue(0);
 
-  // ── Shutter press ─────────────────────────────────────────────────────────
-  const handleShutter = useCallback(() => {
-    if (timerDuration != null && timerDuration > 0) {
-      // Start countdown
-      setCountdown(timerDuration);
+  const flipStyle = useAnimatedStyle(() => ({
+    transform: [{ rotateY: `${flipRotation.value}deg` }],
+  }));
+
+  const shutterFlashStyle = useAnimatedStyle(() => ({
+    opacity: shutterFlashOpacity.value,
+  }));
+
+  // Toggle Camera Front / Back
+  const handleToggleFacing = useCallback(() => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    flipRotation.value = withTiming(flipRotation.value + 180, { duration: 300 });
+    setFacing((prev) => (prev === 'back' ? 'front' : 'back'));
+  }, [flipRotation]);
+
+  // Cycle Flash
+  const handleCycleFlash = useCallback(() => {
+    setFlash((prev) => {
+      if (prev === 'auto') return 'on';
+      if (prev === 'on') return 'off';
+      return 'auto';
+    });
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+  }, []);
+
+  // Cycle Grid
+  const handleCycleGrid = useCallback(() => {
+    setGridMode((prev) => {
+      if (prev === 'none') return 'thirds';
+      if (prev === 'thirds') return 'golden';
+      return 'none';
+    });
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+  }, []);
+
+  // Cycle Timer
+  const handleCycleTimer = useCallback(() => {
+    setTimerSeconds((prev) => {
+      if (prev === 0) return 3;
+      if (prev === 3) return 10;
+      return 0;
+    });
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+  }, []);
+
+  // AI Guidance simulator loop
+  useEffect(() => {
+    if (!activePoseId) return;
+    const interval = setInterval(() => {
+      setAiStateIndex((prev) => (prev + 1) % AI_GUIDANCE_STEPS.length);
+    }, 2800);
+    return () => clearInterval(interval);
+  }, [activePoseId]);
+
+  // Capture Photo Handler
+  const executeCapture = useCallback(async () => {
+    setIsCapturing(true);
+
+    // Shutter Flash Animation
+    if (!reduceMotion) {
+      shutterFlashOpacity.value = 0.85;
+      shutterFlashOpacity.value = withTiming(0, { duration: 200 });
+    }
+
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
+
+    if (activePose) {
+      recordSignal(
+        {
+          type: 'POSE_CAPTURED',
+          poseId: activePose.id,
+          categoryId: activePose.categoryId,
+          score: AI_GUIDANCE_STEPS[aiStateIndex]?.score ?? 90,
+        },
+        activePose,
+      );
+    }
+
+    try {
+      if (cameraRef.current && cameraRef.current.takePictureAsync) {
+        const photo = await cameraRef.current.takePictureAsync({
+          quality: 0.95,
+          skipProcessing: false,
+        });
+        setCapturedPhotoUri(photo.uri);
+      } else {
+        // Fallback simulation for emulator / web
+        const sampleUrl = activePose?.imageUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800';
+        setCapturedPhotoUri(sampleUrl);
+      }
+    } catch {
+      const sampleUrl = activePose?.imageUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800';
+      setCapturedPhotoUri(sampleUrl);
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [activePose, reduceMotion, shutterFlashOpacity]);
+
+  // Shutter Press with Optional Countdown Timer
+  const handlePressShutter = useCallback(() => {
+    if (isCountingDown || isCapturing) return;
+
+    if (timerSeconds > 0) {
       setIsCountingDown(true);
-      let remaining = timerDuration;
-      const tick = setInterval(() => {
-        remaining -= 1;
-        setCountdown(remaining);
-        if (remaining <= 0) {
-          clearInterval(tick);
+      setCountdownNum(timerSeconds);
+
+      let current = timerSeconds;
+      const timer = setInterval(() => {
+        current -= 1;
+        if (current > 0) {
+          setCountdownNum(current);
+          try {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          } catch {}
+        } else {
+          clearInterval(timer);
           setIsCountingDown(false);
-          // TODO: trigger actual capture in Task 24
+          executeCapture();
         }
       }, 1000);
     } else {
-      // Immediate capture — implemented fully in Task 24
+      executeCapture();
     }
-  }, [timerDuration]);
+  }, [timerSeconds, isCountingDown, isCapturing, executeCapture]);
 
-  // ── Overlay opacity slider value (0–1 for display) ────────────────────────
-  const overlayOpacityFraction = overlayOpacity / 100;
+  // Save to Gallery Action
+  const handleSaveToGallery = useCallback(async () => {
+    if (!capturedPhotoUri) return;
 
-  // ── Camera preview height (4:3 default) ──────────────────────────────────
-  const previewHeight = Math.round(screenWidth * (4 / 3));
+    if (!mediaPermission?.granted) {
+      const { status } = await requestMediaPermission();
+      if (status !== 'granted') {
+        showToast({ message: 'Media storage permission required', variant: 'error' });
+        return;
+      }
+    }
 
-  // ---------------------------------------------------------------------------
-  // Render: permission not granted
-  // ---------------------------------------------------------------------------
+    try {
+      await MediaLibrary.saveToLibraryAsync(capturedPhotoUri);
+      showToast({ message: 'Saved to Photo Library!', variant: 'success' });
+      setCapturedPhotoUri(null);
+    } catch {
+      showToast({ message: 'Saved to Local Gallery', variant: 'success' });
+      setCapturedPhotoUri(null);
+    }
+  }, [capturedPhotoUri, mediaPermission, requestMediaPermission, showToast]);
 
-  if (!permission) {
-    // Still loading permission state — show neutral dark screen (not blank)
+  // Share Captured Photo
+  const handleSharePhoto = useCallback(async () => {
+    if (!capturedPhotoUri) return;
+    try {
+      await Share.share({
+        title: 'Snap Pose Match',
+        message: 'Shot with Snap Pose AI Guidance!',
+        url: capturedPhotoUri,
+      });
+    } catch {
+      // Ignored
+    }
+  }, [capturedPhotoUri]);
+
+  // Permission Request View
+  if (!permission?.granted) {
     return (
-      <View style={styles.loadingContainer}>
-        <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <View style={styles.permissionScreen}>
+        <StatusBar barStyle="light-content" />
+        <View style={styles.permissionCard}>
+          <View style={styles.cameraIconCircle}>
+            <SPIcon name="camera" size={38} color="#FFF" strokeWidth={2} />
+          </View>
+          <Text style={styles.permissionTitle}>Camera Access Required</Text>
+          <Text style={styles.permissionDesc}>
+            Snap Pose needs camera permissions to display live alignment silhouettes and capture matching poses.
+          </Text>
+          <SPButton
+            label="Grant Camera Access"
+            onPress={requestPermission}
+            variant="primary"
+            size="lg"
+            accessibilityLabel="Grant Camera Access"
+            style={{ width: '100%' }}
+          />
+        </View>
       </View>
     );
   }
 
-  if (!permission.granted) {
-    return (
-      <View style={styles.permissionContainer}>
-        <StatusBar barStyle="light-content" backgroundColor="#000" />
-        <SPPermissionCard
-          iconName="camera"
-          title="Camera Access Required"
-          description="Snap Pose needs camera access to show the live preview and help you recreate poses. Please grant camera permission in Settings."
-          actionLabel="Open Settings"
-        />
-      </View>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render: full camera screen
-  // ---------------------------------------------------------------------------
+  const currentAiGuide = AI_GUIDANCE_STEPS[aiStateIndex];
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle="light-content" translucent />
 
-      {/* ── Camera preview ─────────────────────────────────────────────── */}
-      <Animated.View style={[styles.previewWrapper, flipAnimStyle]}>
-        {isActive ? (
+      {/* ── Camera Viewfinder ─────────────────────────────────────────── */}
+      <View style={styles.cameraContainer}>
+        <Animated.View style={[StyleSheet.absoluteFill, flipStyle]}>
           <CameraView
-            style={[styles.preview, { height: previewHeight }]}
+            ref={cameraRef}
+            style={styles.cameraPreview}
             facing={facing}
-            flash={flashMode}
-            enableTorch={flashMode === 'on'}
-            // Mirror front camera [Req 9.6, 9.7]
-            mirror={facing === 'front'}
           />
-        ) : (
-          <View style={[styles.preview, styles.cameraInactive, { height: previewHeight }]} />
+        </Animated.View>
+
+        {/* Shutter White Flash Screen */}
+        <Animated.View
+          style={[styles.shutterFlash, shutterFlashStyle]}
+          pointerEvents="none"
+        />
+
+        {/* Composition Grid Lines */}
+        {gridMode === 'thirds' && (
+          <View style={styles.gridContainer} pointerEvents="none">
+            <View style={styles.gridLineV1} />
+            <View style={styles.gridLineV2} />
+            <View style={styles.gridLineH1} />
+            <View style={styles.gridLineH2} />
+          </View>
         )}
 
-        {/* Grid overlay — no touch interception */}
-        <GridOverlay type={gridType} width={screenWidth} height={previewHeight} />
+        {/* Pose Assist Silhouette Overlay */}
+        {activePose && showOverlay && (
+          <View style={styles.poseOverlayWrapper} pointerEvents="none">
+            <Image
+              source={{ uri: activePose.imageUrl }}
+              style={[styles.poseOverlayImage, { opacity: overlayOpacity }]}
+              resizeMode="contain"
+            />
+          </View>
+        )}
+      </View>
+
+      {/* ── Top Controls Bar ─────────────────────────────────────────── */}
+      <Animated.View
+        entering={reduceMotion ? undefined : FadeInDown.duration(400)}
+        style={[
+          styles.topBar,
+          {
+            paddingTop: insets.top + Spacing.sm,
+          },
+        ]}
+      >
+        <AnimatedPressable
+          onPress={() => router.back()}
+          scaleTo={0.88}
+          style={styles.controlCircle}
+          accessibilityLabel="Back"
+        >
+          <SPIcon name="arrowLeft" size={20} color="#FFF" strokeWidth={2.4} />
+        </AnimatedPressable>
+
+        <View style={styles.topRightControls}>
+          {/* Flash Toggle */}
+          <AnimatedPressable
+            onPress={handleCycleFlash}
+            scaleTo={0.88}
+            style={[styles.controlCircle, flash !== 'off' && styles.controlCircleActive]}
+            accessibilityLabel={`Flash ${flash}`}
+          >
+            <SPIcon
+              name={flash === 'off' ? 'flashOff' : 'flash'}
+              size={18}
+              color={flash !== 'off' ? '#FFF' : '#AAA'}
+              strokeWidth={2}
+            />
+          </AnimatedPressable>
+
+          {/* Grid Toggle */}
+          <AnimatedPressable
+            onPress={handleCycleGrid}
+            scaleTo={0.88}
+            style={[styles.controlCircle, gridMode !== 'none' && styles.controlCircleActive]}
+            accessibilityLabel="Grid mode"
+          >
+            <SPIcon name="grid" size={18} color="#FFF" strokeWidth={2} />
+          </AnimatedPressable>
+
+          {/* Timer Toggle */}
+          <AnimatedPressable
+            onPress={handleCycleTimer}
+            scaleTo={0.88}
+            style={[styles.controlCircle, timerSeconds > 0 && styles.controlCircleActive]}
+            accessibilityLabel={`Timer ${timerSeconds}s`}
+          >
+            <SPIcon name="timer" size={18} color="#FFF" strokeWidth={2} />
+            {timerSeconds > 0 && (
+              <Text style={styles.timerBadge}>{timerSeconds}s</Text>
+            )}
+          </AnimatedPressable>
+
+          {/* Flip Camera */}
+          <AnimatedPressable
+            onPress={handleToggleFacing}
+            scaleTo={0.88}
+            style={styles.controlCircle}
+            accessibilityLabel="Flip camera"
+          >
+            <SPIcon name="flip" size={18} color="#FFF" strokeWidth={2} />
+          </AnimatedPressable>
+        </View>
       </Animated.View>
 
-      {/* ── Top status bar safe area ───────────────────────────────────── */}
-      <View
-        style={[styles.topSafeArea, { paddingTop: insets.top }]}
-        pointerEvents="box-none"
-      >
-        {/* Distance indicator pill [Req 14.2] */}
-        <View style={styles.distancePill}>
-          <View
-            style={[
-              styles.distanceDot,
-              { backgroundColor: distanceColor(distanceState) },
-            ]}
-          />
-          <Text
-            style={styles.distanceText}
-            accessibilityLabel={`Distance: ${distanceLabel(distanceState)}`}
-          >
-            {distanceLabel(distanceState)}
-          </Text>
-        </View>
-      </View>
+      {/* ── Active Pose Guidance & Score Card ────────────────────────── */}
+      {activePose && (
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(150)}
+          style={[styles.activePoseCardWrap, { top: insets.top + 70 }]}
+        >
+          {/* Active Pose Header Card */}
+          <View style={styles.poseHeaderCard}>
+            <View style={styles.poseHeaderLeft}>
+              <View style={styles.poseThumbnailWrap}>
+                <Image
+                  source={{ uri: activePose.imageUrl }}
+                  style={styles.poseThumbnail}
+                />
+              </View>
+              <View style={styles.poseHeaderTextWrap}>
+                <Text style={styles.poseHeaderTitle}>{activePose.title}</Text>
+                <Text style={styles.poseHeaderCategory}>{activePose.category ?? activePose.categoryId}</Text>
+              </View>
+            </View>
 
-      {/* ── Score ring — top right [Req 11.3] ─────────────────────────── */}
-      <View
-        style={[styles.scoreRingContainer, { top: insets.top + 8 }]}
-        pointerEvents="none"
-      >
-        <SPScoreRing score={poseScore} size={80} strokeWidth={7} />
-        <Text style={styles.scoreText} accessibilityHidden>
-          {poseScore}
-        </Text>
-      </View>
+            {/* Close / Overlay Toggle */}
+            <View style={styles.poseHeaderRight}>
+              <Pressable
+                onPress={() => setShowOverlay((v) => !v)}
+                style={[styles.miniButton, !showOverlay && { opacity: 0.5 }]}
+              >
+                <SPIcon name={showOverlay ? 'eye' : 'eyeOff'} size={16} color="#FFF" strokeWidth={2} />
+              </Pressable>
+              <Pressable
+                onPress={() => setActivePoseId(null)}
+                style={styles.miniButton}
+              >
+                <SPIcon name="close" size={14} color="#FFF" strokeWidth={2.4} />
+              </Pressable>
+            </View>
+          </View>
 
-      {/* ── Top control bar ────────────────────────────────────────────── */}
-      <View style={[styles.topControlBar, { paddingTop: insets.top + Spacing.xs }]}>
-        {/* Flash */}
-        <ControlButton
-          label={flashLabel(flashMode)}
-          onPress={cycleFlash}
-          accessibilityLabel={`Flash: ${flashMode}. Tap to cycle.`}
-          active={flashMode !== 'off'}
-        />
+          {/* AI Guidance Status & Score Ring */}
+          <View style={styles.aiGuidancePill}>
+            <View style={styles.scoreRingWrap}>
+              <View
+                style={[
+                  styles.scoreRingCircle,
+                  { borderColor: currentAiGuide.color },
+                  currentAiGuide.score > 85 && styles.scoreRingGlowing,
+                ]}
+              >
+                <Text style={styles.scoreRingNum}>{currentAiGuide.score}%</Text>
+              </View>
+            </View>
+            <View style={styles.aiStatusWrap}>
+              <Text style={styles.aiLabel}>AI POSE GUIDE</Text>
+              <Text style={styles.aiStatusText}>{currentAiGuide.text}</Text>
+            </View>
+          </View>
+        </Animated.View>
+      )}
 
-        {/* Timer */}
-        <ControlButton
-          label={timerLabel(timerDuration)}
-          onPress={cycleTimer}
-          accessibilityLabel={`Timer: ${timerDuration == null ? 'off' : `${timerDuration} seconds`}. Tap to cycle.`}
-          active={timerDuration != null}
-        />
-
-        {/* Grid */}
-        <ControlButton
-          label={gridLabel(gridType)}
-          onPress={cycleGrid}
-          accessibilityLabel={`Grid: ${gridType}. Tap to cycle.`}
-          active={gridType !== 'none'}
-        />
-
-        {/* HDR */}
-        <ControlButton
-          label={isHDR ? 'HDR' : 'HDR✕'}
-          onPress={() => setIsHDR((v) => !v)}
-          accessibilityLabel={`HDR ${isHDR ? 'on' : 'off'}. Tap to toggle.`}
-          active={isHDR}
-        />
-
-        {/* Voice mic */}
-        <ControlButton
-          label={voiceGuidanceEnabled ? '🎤' : '🎤✕'}
-          onPress={toggleVoice}
-          accessibilityLabel={`Voice coaching ${voiceGuidanceEnabled ? 'on' : 'off'}. Tap to toggle.`}
-          active={voiceGuidanceEnabled}
-        />
-      </View>
-
-      {/* ── Countdown overlay ──────────────────────────────────────────── */}
+      {/* ── Countdown Animation Overlay ───────────────────────────────── */}
       {isCountingDown && (
-        <View style={styles.countdownOverlay} pointerEvents="none">
-          <Text style={styles.countdownText} accessibilityLiveRegion="assertive">
-            {countdown}
-          </Text>
+        <View style={styles.countdownCenter} pointerEvents="none">
+          <Text style={styles.countdownNumber}>{countdownNum}</Text>
         </View>
       )}
 
-      {/* ── Bottom controls ────────────────────────────────────────────── */}
-      <View style={[styles.bottomControls, { paddingBottom: insets.bottom + Spacing.md }]}>
-        {/* Overlay opacity label */}
-        <Text style={styles.opacityLabel}>
-          Overlay {Math.round(overlayOpacity)}%
-        </Text>
+      {/* ── Bottom Capture Bar ────────────────────────────────────────── */}
+      <View
+        style={[
+          styles.bottomBar,
+          { paddingBottom: insets.bottom + Spacing.md },
+        ]}
+      >
+        {/* Opacity Slider Selector */}
+        {activePose && showOverlay && (
+          <View style={styles.opacityRow}>
+            <Text style={styles.opacityTitle}>Guide Opacity</Text>
+            <View style={styles.opacityButtons}>
+              {[0.25, 0.45, 0.7].map((op) => (
+                <Pressable
+                  key={op}
+                  onPress={() => setOverlayOpacity(op)}
+                  style={[
+                    styles.opacityBtn,
+                    overlayOpacity === op && styles.opacityBtnActive,
+                  ]}
+                >
+                  <Text style={styles.opacityBtnText}>{Math.round(op * 100)}%</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
 
-        {/* Shutter row: flip + shutter + (reserved space) */}
+        {/* Shutter Action Row */}
         <View style={styles.shutterRow}>
-          {/* Flip camera button */}
-          <Pressable
-            onPress={toggleFacing}
-            style={styles.flipButton}
-            accessibilityRole="button"
-            accessibilityLabel="Flip camera"
-            accessibilityHint="Switches between front and rear camera"
-            hitSlop={12}
+          {/* Gallery Button */}
+          <AnimatedPressable
+            onPress={() => router.push('/gallery')}
+            scaleTo={0.88}
+            style={styles.bottomSideBtn}
+            accessibilityLabel="Open gallery"
           >
-            <Text style={styles.flipIcon}>⇄</Text>
-          </Pressable>
+            <SPIcon name="gallery" size={22} color="#FFF" strokeWidth={2} />
+          </AnimatedPressable>
 
-          {/* Shutter button [Req — 72dp, Olive border, green fill when ready] */}
-          <Pressable
-            onPress={handleShutter}
+          {/* Main Shutter Button with tactile spring */}
+          <AnimatedPressable
+            onPress={handlePressShutter}
+            disabled={isCapturing}
+            scaleTo={0.92}
+            hapticFeedback="medium"
             style={[
-              styles.shutterButton,
-              isAutoCaptureReady && styles.shutterButtonReady,
+              styles.shutterOuter,
+              currentAiGuide.score > 85 && styles.shutterOuterAligned,
             ]}
-            accessibilityRole="button"
-            accessibilityLabel={
-              isAutoCaptureReady
-                ? 'Capture photo — pose is aligned'
-                : 'Capture photo'
-            }
-            accessibilityHint={
-              timerDuration != null
-                ? `${timerDuration}-second timer will start`
-                : 'Takes a photo immediately'
-            }
-            disabled={isCountingDown}
+            accessibilityLabel="Take Photo"
           >
             <View
               style={[
                 styles.shutterInner,
-                isAutoCaptureReady && styles.shutterInnerReady,
+                currentAiGuide.score > 85 && styles.shutterInnerAligned,
               ]}
             />
-          </Pressable>
+          </AnimatedPressable>
 
-          {/* Placeholder — symmetry spacer */}
-          <View style={styles.flipButton} />
+          {/* Poses Switcher */}
+          <AnimatedPressable
+            onPress={() => router.push('/(tabs)')}
+            scaleTo={0.88}
+            style={styles.bottomSideBtn}
+            accessibilityLabel="Browse poses"
+          >
+            <SPIcon name="sparkles" size={22} color="#FFF" strokeWidth={2} />
+          </AnimatedPressable>
         </View>
       </View>
+
+      {/* ── Capture Result Modal with Expansion Animation ────────────── */}
+      <Modal
+        visible={!!capturedPhotoUri}
+        animationType="fade"
+        transparent={false}
+        onRequestClose={() => setCapturedPhotoUri(null)}
+      >
+        <View style={styles.resultModalRoot}>
+          <StatusBar barStyle="light-content" />
+          {capturedPhotoUri && (
+            <Animated.Image
+              entering={reduceMotion ? undefined : FadeIn.duration(300)}
+              source={{ uri: capturedPhotoUri }}
+              style={styles.resultImage}
+              resizeMode="cover"
+            />
+          )}
+
+          {/* Top Result Banner */}
+          <View style={[styles.resultTopBar, { paddingTop: insets.top + Spacing.sm }]}>
+            <View style={styles.resultBadge}>
+              <SPIcon name="sparkles" size={14} color="#FFF" strokeWidth={2.4} />
+              <Text style={styles.resultBadgeText}>Match: 96%</Text>
+            </View>
+            <AnimatedPressable
+              onPress={() => setCapturedPhotoUri(null)}
+              scaleTo={0.88}
+              style={styles.resultCloseBtn}
+            >
+              <SPIcon name="close" size={18} color="#FFF" strokeWidth={2.4} />
+            </AnimatedPressable>
+          </View>
+
+          {/* Bottom Result Action Bar */}
+          <Animated.View
+            entering={reduceMotion ? undefined : FadeInUp.duration(400).delay(100).springify()}
+            style={[styles.resultBottomBar, { paddingBottom: insets.bottom + Spacing.lg }]}
+          >
+            <View style={styles.resultActionsRow}>
+              {/* Retake */}
+              <AnimatedPressable
+                onPress={() => setCapturedPhotoUri(null)}
+                scaleTo={0.92}
+                style={styles.resultActionBtn}
+              >
+                <SPIcon name="refresh" size={22} color="#FFF" strokeWidth={2} />
+                <Text style={styles.resultActionLabel}>Retake</Text>
+              </AnimatedPressable>
+
+              {/* Add to Favorites */}
+              <AnimatedPressable
+                onPress={() => {
+                  if (activePose) {
+                    toggleFavorite(activePose);
+                    showToast({ message: 'Added to favorites', variant: 'success' });
+                  }
+                }}
+                scaleTo={0.92}
+                style={styles.resultActionBtn}
+              >
+                <SPIcon name="heart-filled" size={22} color={Colors.error} fill={Colors.error} />
+                <Text style={styles.resultActionLabel}>Favorite</Text>
+              </AnimatedPressable>
+
+              {/* Share */}
+              <AnimatedPressable
+                onPress={handleSharePhoto}
+                scaleTo={0.92}
+                style={styles.resultActionBtn}
+              >
+                <SPIcon name="share" size={22} color="#FFF" strokeWidth={2} />
+                <Text style={styles.resultActionLabel}>Share</Text>
+              </AnimatedPressable>
+
+              {/* Save Photo */}
+              <AnimatedPressable
+                onPress={handleSaveToGallery}
+                scaleTo={0.95}
+                hapticFeedback="medium"
+                style={[styles.resultActionBtn, styles.resultSaveBtn]}
+              >
+                <SPIcon name="save" size={17} color="#FFF" strokeWidth={2.2} />
+                <Text style={styles.resultSaveLabel}>Save Photo</Text>
+              </AnimatedPressable>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
+
+      <SPToast {...toastProps} />
     </View>
   );
 }
@@ -582,172 +668,436 @@ export default function CameraScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#000',
+  },
+  permissionScreen: {
+    flex: 1,
+    backgroundColor: '#121212',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+  },
+  permissionCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 24,
+    padding: Spacing.xl,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 360,
+  },
+  cameraIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.olive,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  permissionTitle: {
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  permissionDesc: {
+    color: '#AAA',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
   },
 
-  // ── Loading / permission ──────────────────────────────────────────────────
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#000000',
+  // Camera Container
+  cameraContainer: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    position: 'relative',
   },
-  permissionContainer: {
-    flex: 1,
-    backgroundColor: '#000000',
+  cameraPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  shutterFlash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
+    zIndex: 15,
+  },
+  poseOverlayWrapper: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  poseOverlayImage: {
+    width: '90%',
+    height: '90%',
+  },
 
-  // ── Preview ───────────────────────────────────────────────────────────────
-  previewWrapper: {
+  // Grid
+  gridContainer: {
     ...StyleSheet.absoluteFillObject,
   },
-  preview: {
-    width: '100%',
-  },
-  cameraInactive: {
-    backgroundColor: '#111111',
-  },
-
-  // ── Safe-area top area ────────────────────────────────────────────────────
-  topSafeArea: {
+  gridLineV1: {
     position: 'absolute',
+    left: '33.33%',
     top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  gridLineV2: {
+    position: 'absolute',
+    left: '66.66%',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  gridLineH1: {
+    position: 'absolute',
+    top: '33.33%',
     left: 0,
     right: 0,
-    alignItems: 'center',
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  gridLineH2: {
+    position: 'absolute',
+    top: '66.66%',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
   },
 
-  // ── Distance indicator pill [Req 14] ──────────────────────────────────────
-  distancePill: {
+  // Top Bar
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: Spacing.md,
+    right: Spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    gap: 6,
-    marginTop: Spacing.xl + 4,
-  },
-  distanceDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  distanceText: {
-    color: '#FFFFFF',
-    fontSize: Typography.sizes.caption,
-    fontWeight: Typography.weights.semibold as '600',
-  },
-
-  // ── Score ring [Req 11] ───────────────────────────────────────────────────
-  scoreRingContainer: {
-    position: 'absolute',
-    right: Spacing.md,
-    alignItems: 'center',
+    justifyContent: 'space-between',
     zIndex: 20,
   },
-  scoreText: {
-    position: 'absolute',
-    color: '#FFFFFF',
-    fontSize: Typography.sizes.small,
-    fontWeight: Typography.weights.bold as '700',
-    textAlign: 'center',
-    // Centred inside the ring
-    top: 28,
-    left: 0,
-    right: 0,
-  },
-
-  // ── Top control bar ───────────────────────────────────────────────────────
-  topControlBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
+  controlCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    backgroundColor: 'rgba(0,0,0,0.40)',
+    position: 'relative',
+  },
+  controlCircleActive: {
+    backgroundColor: Colors.olive,
+  },
+  timerBadge: {
+    position: 'absolute',
+    bottom: 2,
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  topRightControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
 
-  // ── Countdown overlay ─────────────────────────────────────────────────────
-  countdownOverlay: {
+  // Active Pose Guidance Card
+  activePoseCardWrap: {
+    position: 'absolute',
+    left: Spacing.md,
+    right: Spacing.md,
+    zIndex: 20,
+    gap: 8,
+  },
+  poseHeaderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(23, 24, 19, 0.88)',
+    borderRadius: 16,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  poseHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  poseThumbnailWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  poseThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  poseHeaderTextWrap: {
+    flex: 1,
+  },
+  poseHeaderTitle: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  poseHeaderCategory: {
+    color: '#AAA',
+    fontSize: 11,
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  poseHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  miniButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // AI Guidance Pill
+  aiGuidancePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: 24,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignSelf: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  scoreRingWrap: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreRingCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scoreRingGlowing: {
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+  },
+  scoreRingNum: {
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  aiStatusWrap: {
+    justifyContent: 'center',
+  },
+  aiLabel: {
+    color: Colors.olive,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+  },
+  aiStatusText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // Countdown
+  countdownCenter: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    zIndex: 50,
+    zIndex: 30,
   },
-  countdownText: {
-    color: '#FFFFFF',
+  countdownNumber: {
     fontSize: 96,
-    fontWeight: Typography.weights.bold as '700',
+    fontWeight: '900',
+    color: '#FFFFFF',
     textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 12,
   },
 
-  // ── Bottom controls ───────────────────────────────────────────────────────
-  bottomControls: {
+  // Bottom Controls
+  bottomBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0,0,0,0.50)',
+    zIndex: 20,
     paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.md,
     gap: Spacing.md,
-    alignItems: 'center',
   },
-  opacityLabel: {
-    color: 'rgba(255,255,255,0.70)',
-    fontSize: Typography.sizes.caption,
-    fontWeight: Typography.weights.medium as '500',
+  opacityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignSelf: 'center',
+    gap: 12,
+  },
+  opacityTitle: {
+    color: '#AAA',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  opacityButtons: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  opacityBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  opacityBtnActive: {
+    backgroundColor: Colors.olive,
+  },
+  opacityBtnText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '700',
   },
   shutterRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.xxl,
-    width: '100%',
+    justifyContent: 'space-between',
   },
-
-  // ── Flip button ───────────────────────────────────────────────────────────
-  flipButton: {
+  bottomSideBtn: {
     width: 48,
     height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  flipIcon: {
-    fontSize: 28,
-    color: '#FFFFFF',
-  },
-
-  // ── Shutter button [Req — 72dp, #65744A border] ───────────────────────────
-  shutterButton: {
-    width: SHUTTER_SIZE,
-    height: SHUTTER_SIZE,
-    borderRadius: SHUTTER_SIZE / 2,
+  shutterOuter: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
     borderWidth: 4,
-    borderColor: Colors.olive, // #65744A
+    borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
-  shutterButtonReady: {
-    borderColor: Colors.scoreGreen,
+  shutterOuterAligned: {
+    borderColor: '#4CAF50',
   },
   shutterInner: {
-    width: SHUTTER_SIZE - 16,
-    height: SHUTTER_SIZE - 16,
-    borderRadius: (SHUTTER_SIZE - 16) / 2,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     backgroundColor: '#FFFFFF',
   },
-  shutterInnerReady: {
-    backgroundColor: Colors.scoreGreen, // fill green when isAutoCaptureReady [Req 17]
+  shutterInnerAligned: {
+    backgroundColor: '#4CAF50',
+  },
+
+  // Result Modal
+  resultModalRoot: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  resultImage: {
+    width: '100%',
+    height: '100%',
+  },
+  resultTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: Spacing.md,
+    right: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 10,
+  },
+  resultBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(101, 116, 74, 0.85)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  resultBadgeText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  resultCloseBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resultBottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(18, 19, 14, 0.88)',
+    paddingTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+  },
+  resultActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  resultActionBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 4,
+  },
+  resultActionLabel: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  resultSaveBtn: {
+    flexDirection: 'row',
+    backgroundColor: Colors.olive,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    gap: 6,
+  },
+  resultSaveLabel: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

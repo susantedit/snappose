@@ -107,7 +107,7 @@ export function SPCameraGridOverlay({
     <Canvas
       style={StyleSheet.absoluteFill}
       pointerEvents="none"
-      accessibilityHidden
+      accessibilityElementsHidden
     >
       {lines.map((l) => (
         <Line

@@ -8,6 +8,7 @@
  * [Req 25.2]
  */
 
+import { Platform } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import { CrashlyticsService } from '@/services/firebase/crashlytics';
 
@@ -18,6 +19,20 @@ import { CrashlyticsService } from '@/services/firebase/crashlytics';
 let _db: SQLite.SQLiteDatabase | null = null;
 
 export function getDb(): SQLite.SQLiteDatabase {
+  if (!_db) {
+    try {
+      if (typeof SQLite.openDatabaseSync === 'function') {
+        _db = SQLite.openDatabaseSync('snap-pose.db');
+        _db.execSync('PRAGMA journal_mode = WAL;');
+        _db.execSync('PRAGMA foreign_keys = ON;');
+        for (const migration of MIGRATIONS) {
+          _db.execSync(migration);
+        }
+      }
+    } catch (err) {
+      console.warn('[SQLite] Synchronous init fallback notice:', err);
+    }
+  }
   if (!_db) {
     throw new Error('Database not initialised — call initDatabase() first');
   }
@@ -210,6 +225,10 @@ export async function initDatabase(): Promise<void> {
   } catch (err) {
     console.error('[SQLite] initDatabase failed:', err);
     CrashlyticsService.recordError(err, 'SQLiteInitError');
+    if (Platform.OS === 'web') {
+      console.warn('[SQLite] SQLite unavailable on web; operating in offline fallback mode.');
+      return;
+    }
     throw err;
   }
 }

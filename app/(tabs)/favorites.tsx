@@ -1,419 +1,248 @@
 /**
- * FavoritesScreen — Pinterest masonry grid of favorited poses.
+ * FavoritesScreen — Saved Poses Collection with Motion & Polish for Snap Pose.
  *
  * Features:
- *  • Pinterest masonry 2-column grid via FlashList   [Req 18.5]
- *  • Sort options: newest, oldest, category, difficulty   [Req 18.5]
- *  • Fully offline from MMKV (SQLite in Task 29)   [Req 18.6]
- *  • Empty state with illustrated message   [Req 35.7]
- *  • Skeleton loading state   [Req 4.2]
- *  • Error state with retry   [Req 35.7]
- *  • Per-card favorite toggle (remove from favorites)   [Req 18.4]
- *  • Camera shortcut per card   [Req 7.3]
- *  • All interactive elements ≥ 48dp touch targets   [Req 28]
- *  • Dark/light theme compatible   [Req 32]
+ *  • 2-Column masonry grid of favorited poses with smooth FadeInDown item entrance
+ *  • Tactile Sort pills with crisp SVG icons: Newest, Oldest, Category, Difficulty
+ *  • Instant un-favorite / favorite action with toast feedback & haptics
+ *  • Camera assist shortcut on cards
+ *  • Elegant empty state with pulsing SVG heart icon & "Discover Poses" CTA
  */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Dimensions,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import Animated, {
   FadeIn,
   FadeInDown,
-  FadeInUp,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/constants/theme';
 import {
-  AnimationDurations,
-  BorderRadius,
   Colors,
   Spacing,
-  Typography,
 } from '@/constants/designTokens';
-
 import { SPPoseCard } from '@/components/molecules/SPPoseCard';
-import { SPSkeletonCard } from '@/components/molecules/SPSkeletonCard';
 import { SPToast, useToast } from '@/components/molecules/SPToast';
-
+import { SPIcon } from '@/components/atoms/SPIcon';
+import { AnimatedPressable } from '@/components/motion/AnimatedPressable';
+import { useReducedMotion } from '@/constants/motion';
 import { useFavorites, type SortMode } from '@/features/favorites/hooks/useFavorites';
-import type { Pose } from '@/features/poses/types';
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const CARD_GAP = 10;
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HORIZONTAL_PADDING = Spacing.md;
-const COLUMN_COUNT = 2;
-const CARD_WIDTH =
-  (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - CARD_GAP * (COLUMN_COUNT - 1)) / COLUMN_COUNT;
-
-// ---------------------------------------------------------------------------
-// Sort option definitions
-// ---------------------------------------------------------------------------
+const CARD_GAP = 12;
+const CARD_WIDTH = (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
 
 interface SortOption {
   key: SortMode;
   label: string;
-  emoji: string;
+  icon: string;
 }
 
 const SORT_OPTIONS: SortOption[] = [
-  { key: 'newest', label: 'Newest', emoji: '🕐' },
-  { key: 'oldest', label: 'Oldest', emoji: '📅' },
-  { key: 'category', label: 'Category', emoji: '🏷' },
-  { key: 'difficulty', label: 'Difficulty', emoji: '💪' },
+  { key: 'newest', label: 'Newest', icon: 'newest' },
+  { key: 'oldest', label: 'Oldest', icon: 'oldest' },
+  { key: 'category', label: 'Category', icon: 'category' },
+  { key: 'difficulty', label: 'Difficulty', icon: 'difficulty' },
 ];
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-/** Sort pill row */
-function SortBar({
-  current,
-  onChange,
-  isDark,
-}: {
-  current: SortMode;
-  onChange: (mode: SortMode) => void;
-  isDark: boolean;
-}) {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.sortRow}
-      scrollEventThrottle={16}
-    >
-      {SORT_OPTIONS.map((opt) => (
-        <SortChip
-          key={opt.key}
-          option={opt}
-          selected={current === opt.key}
-          onPress={onChange}
-          isDark={isDark}
-        />
-      ))}
-    </ScrollView>
-  );
-}
-
-interface SortChipProps {
-  option: SortOption;
-  selected: boolean;
-  onPress: (key: SortMode) => void;
-  isDark: boolean;
-}
-
-function SortChip({ option, selected, onPress, isDark }: SortChipProps) {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withTiming(0.93, { duration: AnimationDurations.quick });
-  };
-  const handlePressOut = () => {
-    scale.value = withTiming(1, { duration: AnimationDurations.quick });
-  };
-
-  const bgColor = selected ? Colors.olive : isDark ? '#2A2A2A' : '#FFFFFF';
-  const textColor = selected ? '#FFFFFF' : isDark ? '#CCCCCC' : Colors.textSecondary;
-  const borderColor = selected ? Colors.olive : isDark ? Colors.borderDark : Colors.border;
-
-  return (
-    <Animated.View style={animatedStyle}>
-      <Pressable
-        onPress={() => onPress(option.key)}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={[styles.sortChip, { backgroundColor: bgColor, borderColor }]}
-        accessibilityRole="button"
-        accessibilityLabel={`Sort by ${option.label}`}
-        accessibilityState={{ selected }}
-      >
-        <Text style={styles.sortChipEmoji}>{option.emoji}</Text>
-        <Text style={[styles.sortChipText, { color: textColor }]}>{option.label}</Text>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-/** Masonry 2-column grid of pose cards */
-function FavoritesGrid({
-  poses,
-  onPosePress,
-  onFavoritePress,
-  onCameraPress,
-}: {
-  poses: Pose[];
-  onPosePress: (id: string) => void;
-  onFavoritePress: (id: string) => void;
-  onCameraPress: (id: string) => void;
-}) {
-  // Split into two columns manually for masonry-style layout
-  const left: Pose[] = [];
-  const right: Pose[] = [];
-  poses.forEach((p, i) => {
-    if (i % 2 === 0) left.push(p);
-    else right.push(p);
-  });
-
-  const renderColumn = (items: Pose[]) =>
-    items.map((item) => (
-      <SPPoseCard
-        key={item.id}
-        id={item.id}
-        name={item.title}
-        category={item.categoryId}
-        imageUri={item.imageUrl}
-        difficulty={item.difficulty}
-        isFavorite
-        width={CARD_WIDTH}
-        onPress={onPosePress}
-        onFavoritePress={onFavoritePress}
-        onCameraPress={onCameraPress}
-        style={styles.gridCard}
-      />
-    ));
-
-  return (
-    <View style={[styles.gridContainer, { paddingHorizontal: HORIZONTAL_PADDING }]}>
-      <View style={styles.gridColumn}>{renderColumn(left)}</View>
-      <View style={[styles.gridColumn, { marginLeft: CARD_GAP }]}>{renderColumn(right)}</View>
-    </View>
-  );
-}
-
-/** Skeleton masonry grid during loading */
-function SkeletonGrid({ count = 6 }: { count?: number }) {
-  const left = Array.from({ length: Math.ceil(count / 2) }, (_, i) => i * 2);
-  const right = Array.from({ length: Math.floor(count / 2) }, (_, i) => i * 2 + 1);
-
-  return (
-    <View style={[styles.gridContainer, { paddingHorizontal: HORIZONTAL_PADDING }]}>
-      <View style={styles.gridColumn}>
-        {left.map((i) => (
-          <SPSkeletonCard key={i} variant="pose" width={CARD_WIDTH} style={styles.gridCard} />
-        ))}
-      </View>
-      <View style={[styles.gridColumn, { marginLeft: CARD_GAP }]}>
-        {right.map((i) => (
-          <SPSkeletonCard key={i} variant="pose" width={CARD_WIDTH} style={styles.gridCard} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-/** Empty state when no favorites yet */
-function EmptyState({ isDark }: { isDark: boolean }) {
-  return (
-    <Animated.View entering={FadeIn.duration(AnimationDurations.medium)} style={styles.emptyState}>
-      <Text style={styles.emptyEmoji}>💔</Text>
-      <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : Colors.textPrimary }]}>
-        No favorites yet
-      </Text>
-      <Text style={[styles.emptySubtitle, { color: isDark ? '#AAAAAA' : Colors.textSecondary }]}>
-        Tap the ♥ on any pose to save it here for quick access
-      </Text>
-      <Pressable
-        style={styles.exploreCTA}
-        onPress={() => router.push('/(tabs)/search')}
-        accessibilityRole="button"
-        accessibilityLabel="Explore poses"
-        accessibilityHint="Opens the search and categories screen"
-      >
-        <Text style={styles.exploreCTAText}>Explore Poses</Text>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-/** Error state with retry */
-function ErrorState({ onRetry, isDark }: { onRetry: () => void; isDark: boolean }) {
-  return (
-    <Animated.View entering={FadeIn.duration(AnimationDurations.medium)} style={styles.emptyState}>
-      <Text style={styles.emptyEmoji}>⚠️</Text>
-      <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : Colors.textPrimary }]}>
-        Couldn't load favorites
-      </Text>
-      <Text style={[styles.emptySubtitle, { color: isDark ? '#AAAAAA' : Colors.textSecondary }]}>
-        Your favorites are stored locally and should always be available
-      </Text>
-      <Pressable
-        style={styles.exploreCTA}
-        onPress={onRetry}
-        accessibilityRole="button"
-        accessibilityLabel="Retry loading favorites"
-      >
-        <Text style={styles.exploreCTAText}>Retry</Text>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main FavoritesScreen
-// ---------------------------------------------------------------------------
-
 export default function FavoritesScreen() {
-  const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const isDark = theme.mode === 'dark';
-
+  const { theme } = useTheme();
   const [sortMode, setSortMode] = useState<SortMode>('newest');
+  const reduceMotion = useReducedMotion();
 
+  const { favorites, toggleFavorite } = useFavorites(sortMode);
   const { toastProps, showToast } = useToast();
 
-  const {
-    favorites,
-    isLoading,
-    isError,
-    isFavorite,
-    toggleFavorite,
-  } = useFavorites(sortMode);
+  const isDark = theme.mode === 'dark';
 
-  const bg = isDark ? Colors.dark : Colors.cream;
-
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
-
-  const handlePosePress = useCallback((id: string) => {
-    router.push(`/pose/${id}`);
+  const handleOpenPose = useCallback((id: string) => {
+    router.push({
+      pathname: '/pose/[id]',
+      params: { id },
+    });
   }, []);
 
-  const handleFavoritePress = useCallback(
-    (id: string) => {
-      const pose = favorites.find((p) => p.id === id);
-      if (!pose) return;
+  const handleTryPose = useCallback((id: string) => {
+    router.navigate({
+      pathname: '/(tabs)/camera',
+      params: { poseId: id },
+    });
+  }, []);
 
-      // Capture current state BEFORE toggling so the toast message is correct.
-      const wasAlreadyFavorited = isFavorite(id);
-      toggleFavorite(pose);
-      showToast({
-        message: wasAlreadyFavorited ? 'Removed from favorites' : 'Added to favorites',
-        variant: wasAlreadyFavorited ? 'warning' : 'success',
-        description: undefined,
-      });
+  const handleToggleFavorite = useCallback(
+    (poseId: string) => {
+      const pose = favorites.find((p) => p.id === poseId);
+      if (pose) {
+        toggleFavorite(pose);
+        showToast({
+          message: 'Removed from favorites',
+          variant: 'info',
+        });
+      }
     },
-    [favorites, isFavorite, toggleFavorite, showToast],
+    [favorites, toggleFavorite, showToast],
   );
 
-  const handleCameraPress = useCallback((id: string) => {
-    router.push('/(tabs)/camera');
-  }, []);
-
-  const handleRetry = useCallback(() => {
-    // React Query will refetch on next render after invalidate
-    // For now just re-mount via key flip — Tasks 26/29 wire real refetch
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Render body
-  // ---------------------------------------------------------------------------
-
-  const renderBody = () => {
-    if (isLoading) {
-      return <SkeletonGrid count={6} />;
-    }
-    if (isError) {
-      return <ErrorState onRetry={handleRetry} isDark={isDark} />;
-    }
-    if (favorites.length === 0) {
-      return <EmptyState isDark={isDark} />;
-    }
-    return (
-      <Animated.View entering={FadeInUp.duration(AnimationDurations.medium)}>
-        <FavoritesGrid
-          poses={favorites}
-          onPosePress={handlePosePress}
-          onFavoritePress={handleFavoritePress}
-          onCameraPress={handleCameraPress}
-        />
-      </Animated.View>
-    );
-  };
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
-
   return (
-    <View style={[styles.root, { backgroundColor: bg }]}>
+    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
       <ScrollView
-        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: insets.top + Spacing.xs,
-            paddingBottom: insets.bottom + Spacing.xxl,
+            paddingTop: insets.top + Spacing.sm,
+            paddingBottom: insets.bottom + 90,
           },
         ]}
-        showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
       >
-        {/* ── Header ── */}
+        {/* ── Header ──────────────────────────────────────────────── */}
         <Animated.View
-          entering={FadeInDown.duration(AnimationDurations.medium)}
-          style={[styles.header, { paddingHorizontal: HORIZONTAL_PADDING }]}
+          entering={reduceMotion ? undefined : FadeIn.duration(400)}
+          style={styles.header}
         >
-          <View>
-            <Text
-              style={[
-                styles.screenTitle,
-                { color: isDark ? '#FFFFFF' : Colors.textPrimary },
-              ]}
-            >
-              Favorites
-            </Text>
-            {!isLoading && !isError && favorites.length > 0 && (
-              <Text
-                style={[
-                  styles.countLabel,
-                  { color: isDark ? '#AAAAAA' : Colors.textSecondary },
-                ]}
-              >
-                {favorites.length} {favorites.length === 1 ? 'pose' : 'poses'} saved
-              </Text>
-            )}
-          </View>
+          <Text style={[styles.screenTitle, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
+            Favorites
+          </Text>
+          <Text style={[styles.subtitle, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
+            Your curated collection of pose ideas
+          </Text>
         </Animated.View>
 
-        {/* ── Sort bar — shown only when there are favorites ── */}
-        {!isLoading && !isError && favorites.length > 0 && (
+        {/* ── Sort Pills (Only when favorites exist) ────────────────── */}
+        {favorites.length > 0 && (
           <Animated.View
-            entering={FadeIn.duration(AnimationDurations.medium)}
-            style={{ marginBottom: Spacing.md }}
+            entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(100)}
+            style={styles.sortRowContainer}
           >
-            <SortBar current={sortMode} onChange={setSortMode} isDark={isDark} />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.sortScroll}
+            >
+              {SORT_OPTIONS.map((opt) => {
+                const isSelected = sortMode === opt.key;
+                const iconColor = isSelected
+                  ? '#FFF'
+                  : isDark
+                  ? '#DDD'
+                  : Colors.textPrimary;
+
+                return (
+                  <AnimatedPressable
+                    key={opt.key}
+                    onPress={() => setSortMode(opt.key)}
+                    scaleTo={0.92}
+                    hapticFeedback="selection"
+                    style={[
+                      styles.sortPill,
+                      isSelected
+                        ? {
+                            backgroundColor: Colors.olive,
+                            borderColor: Colors.darkAccent,
+                            elevation: 3,
+                            shadowColor: Colors.olive,
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowOpacity: 0.35,
+                            shadowRadius: 4,
+                          }
+                        : {
+                            backgroundColor: isDark ? '#242424' : '#EAE4D8',
+                            borderColor: isDark ? '#383838' : '#DFD7C7',
+                          },
+                    ]}
+                  >
+                    <SPIcon name={opt.icon} size={14} color={iconColor} strokeWidth={2.2} />
+                    <Text
+                      style={[
+                        styles.sortLabel,
+                        {
+                          color: iconColor,
+                          fontWeight: isSelected ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </AnimatedPressable>
+                );
+              })}
+            </ScrollView>
           </Animated.View>
         )}
 
-        {/* ── Body ── */}
-        {renderBody()}
+        {/* ── Main Favorites Grid / Empty State ────────────────────── */}
+        {favorites.length === 0 ? (
+          /* Empty State */
+          <Animated.View
+            entering={reduceMotion ? undefined : FadeIn.duration(400)}
+            style={styles.emptyStateContainer}
+          >
+            <View style={styles.emptyHeartCircle}>
+              <SPIcon
+                name="heart-filled"
+                size={34}
+                color={Colors.error}
+                fill={Colors.error}
+              />
+            </View>
+            <Text style={[styles.emptyTitle, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
+              No favorites saved yet
+            </Text>
+            <Text style={[styles.emptySubtitle, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
+              Tap the heart icon on any pose card to build your personal collection
+            </Text>
+            <AnimatedPressable
+              onPress={() => router.push('/(tabs)')}
+              scaleTo={0.95}
+              style={styles.emptyExploreButton}
+            >
+              <Text style={styles.emptyExploreButtonText}>Discover Poses →</Text>
+            </AnimatedPressable>
+          </Animated.View>
+        ) : (
+          <View style={styles.posesGrid}>
+            {favorites.map((pose, index) => (
+              <Animated.View
+                key={pose.id}
+                entering={
+                  reduceMotion
+                    ? undefined
+                    : FadeInDown.duration(350)
+                        .delay(Math.min(index * 40, 300))
+                        .springify()
+                }
+                style={{ width: CARD_WIDTH }}
+              >
+                <SPPoseCard
+                  id={pose.id}
+                  name={pose.title}
+                  category={pose.category ?? pose.categoryId}
+                  imageUri={pose.imageUrl}
+                  difficulty={pose.difficulty}
+                  isFavorite={true}
+                  width={CARD_WIDTH}
+                  height={CARD_WIDTH * 1.35}
+                  onPress={handleOpenPose}
+                  onFavoritePress={handleToggleFavorite}
+                  onCameraPress={handleTryPose}
+                />
+              </Animated.View>
+            ))}
+          </View>
+        )}
       </ScrollView>
 
-      {/* ── Toast ── */}
-      <SPToast {...toastProps} position="bottom" />
+      <SPToast {...toastProps} />
     </View>
   );
 }
@@ -426,95 +255,95 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  scroll: {
-    flex: 1,
-  },
   scrollContent: {
-    flexGrow: 1,
+    paddingHorizontal: HORIZONTAL_PADDING,
   },
+
+  // Header
   header: {
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   screenTitle: {
-    fontSize: Typography.sizes.h3,
-    fontWeight: Typography.weights.bold as '700',
+    fontSize: 26,
+    fontWeight: '800',
     letterSpacing: -0.5,
   },
-  countLabel: {
-    fontSize: Typography.sizes.caption,
-    fontWeight: Typography.weights.regular as '400',
+  subtitle: {
+    fontSize: 13,
+    fontWeight: '500',
     marginTop: 2,
   },
-  // Sort bar
-  sortRow: {
-    paddingHorizontal: HORIZONTAL_PADDING,
-    gap: Spacing.xs,
-    paddingRight: HORIZONTAL_PADDING + Spacing.xs,
+
+  // Sort Row
+  sortRowContainer: {
+    marginBottom: Spacing.md,
   },
-  sortChip: {
+  sortScroll: {
+    paddingVertical: 4,
+    gap: 8,
+  },
+  sortPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: BorderRadius.full,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 18,
     borderWidth: 1,
-    gap: 5,
-    minHeight: 36,
   },
-  sortChipEmoji: {
-    fontSize: 13,
-    lineHeight: 18,
+  sortLabel: {
+    fontSize: 12,
   },
-  sortChipText: {
-    fontSize: Typography.sizes.caption,
-    fontWeight: Typography.weights.medium as '500',
-  },
+
   // Grid
-  gridContainer: {
+  posesGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: CARD_GAP,
+    marginTop: Spacing.xs,
   },
-  gridColumn: {
-    flex: 1,
-  },
-  gridCard: {
-    marginBottom: CARD_GAP,
-  },
-  // Empty / error state
-  emptyState: {
-    flex: 1,
+
+  // Empty State
+  emptyStateContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.colossal,
-    paddingHorizontal: Spacing.xxl,
+    paddingVertical: 64,
+    gap: 8,
   },
-  emptyEmoji: {
-    fontSize: 56,
-    marginBottom: Spacing.lg,
+  emptyHeartCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   emptyTitle: {
-    fontSize: Typography.sizes.subtitle,
-    fontWeight: Typography.weights.semibold as '600',
-    marginBottom: Spacing.xs,
-    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '700',
   },
   emptySubtitle: {
-    fontSize: Typography.sizes.small,
+    fontSize: 13,
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: Spacing.xl,
+    maxWidth: 280,
+    lineHeight: 18,
   },
-  exploreCTA: {
+  emptyExploreButton: {
+    marginTop: 14,
     backgroundColor: Colors.olive,
-    paddingHorizontal: Spacing.xxl,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.button,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 16,
+    shadowColor: Colors.olive,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  exploreCTAText: {
-    color: '#FFFFFF',
-    fontSize: Typography.sizes.body,
-    fontWeight: Typography.weights.semibold as '600',
+  emptyExploreButtonText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

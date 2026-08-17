@@ -9,13 +9,11 @@
  *  [Req 20.5] Metadata: capture date, pose used, AI Score, resolution, device lens
  *  [Req 20.6] System share sheet via React Native Share API
  *  [Req 20]   Fully offline — reads from expo-media-library + MMKV favorites
+ *  All icons backed by crisp SVG SPIcon components and spring physics.
  */
 
 import React, {
   useCallback,
-  useEffect,
-  useMemo,
-  useRef,
   useState,
 } from 'react';
 import {
@@ -52,37 +50,24 @@ import { SPButton } from '@/components/atoms/SPButton';
 import { SPBadge } from '@/components/atoms/SPBadge';
 import { SPDialog } from '@/components/organisms/SPDialog';
 import { SPToast, useToast } from '@/components/molecules/SPToast';
+import { SPIcon } from '@/components/atoms/SPIcon';
 import { mmkv } from '@/database/mmkv/mmkvClient';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/** CapturedPhoto — local data model for a photo taken in the app. */
 export interface CapturedPhoto {
-  /** Unique identifier — media library asset ID. */
   id: string;
-  /** Local file URI (file://…). */
   uri: string;
-  /** Thumbnail URI when available. */
   thumbnailUri?: string;
-  /** ISO date string of capture. */
   captureDate: string;
-  /** Pose reference ID if the photo was taken with a pose overlay. */
   poseId?: string;
-  /** AI pose score at time of capture (0–100). */
   aiScore?: number;
-  /** Photo resolution string, e.g. "1920×1080". */
   resolution?: string;
-  /** Device lens used, e.g. "rear" | "front". */
   lens?: string;
-  /** Whether this photo has been marked as a favorite. */
   isFavorite: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// MMKV helpers for favorites
-// ---------------------------------------------------------------------------
 
 const GALLERY_FAVORITES_KEY = 'gallery_favorites';
 
@@ -100,14 +85,9 @@ function saveFavoriteIds(ids: Set<string>): void {
   mmkv.set(GALLERY_FAVORITES_KEY, JSON.stringify(Array.from(ids)));
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const NUM_COLUMNS = 3;
 const CELL_GAP = 2;
 
-// Mock pose names for display (Task 29 will wire real SQLite data)
 const MOCK_POSE_NAMES: Record<string, string> = {
   OVER_SHOULDER: 'Over Shoulder',
   WALKING_CASUAL: 'Walking Casual',
@@ -121,14 +101,6 @@ function mockPoseName(poseId?: string): string | undefined {
   return MOCK_POSE_NAMES[poseId] ?? poseId;
 }
 
-// ---------------------------------------------------------------------------
-// useGalleryPhotos hook
-// ---------------------------------------------------------------------------
-
-/**
- * Loads all photos from the device media library that were created by this app,
- * sorted by creation time descending. [Req 20.1, 20.7]
- */
 function useGalleryPhotos() {
   const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,7 +111,6 @@ function useGalleryPhotos() {
     setLoading(true);
     setError(null);
     try {
-      // Request permission
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== 'granted') {
         setPermissionGranted(false);
@@ -148,7 +119,6 @@ function useGalleryPhotos() {
       }
       setPermissionGranted(true);
 
-      // Fetch all assets sorted newest first [Req 20.1]
       const result = await MediaLibrary.getAssetsAsync({
         mediaType: MediaLibrary.MediaType.photo,
         sortBy: [[MediaLibrary.SortBy.creationTime, false]],
@@ -165,14 +135,13 @@ function useGalleryPhotos() {
           ? `${asset.width}×${asset.height}`
           : undefined,
         isFavorite: favoriteIds.has(asset.id),
-        // Mock AI metadata — Task 29 will replace with SQLite lookup
         poseId: undefined,
         aiScore: undefined,
         lens: undefined,
       }));
 
       setPhotos(mapped);
-    } catch (err) {
+    } catch {
       setError('Could not load photos. Please try again.');
     } finally {
       setLoading(false);
@@ -181,10 +150,6 @@ function useGalleryPhotos() {
 
   return { photos, loading, error, permissionGranted, loadPhotos, setPhotos };
 }
-
-// ---------------------------------------------------------------------------
-// PhotoCell component
-// ---------------------------------------------------------------------------
 
 interface PhotoCellProps {
   photo: CapturedPhoto;
@@ -237,7 +202,7 @@ function PhotoCell({
         {/* Favorite indicator */}
         {photo.isFavorite && (
           <View style={cellStyles.favoriteIndicator} accessibilityElementsHidden>
-            <Text style={cellStyles.favoriteIcon}>♥</Text>
+            <SPIcon name="heart-filled" size={11} color={Colors.error} fill={Colors.error} />
           </View>
         )}
         {/* Multi-select overlay */}
@@ -255,7 +220,7 @@ function PhotoCell({
               ]}
             >
               {isSelected && (
-                <Text style={cellStyles.checkMark}>✓</Text>
+                <SPIcon name="check" size={12} color="#FFFFFF" strokeWidth={3} />
               )}
             </View>
           </View>
@@ -279,14 +244,9 @@ const cellStyles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  favoriteIcon: {
-    color: Colors.error,
-    fontSize: 11,
-    lineHeight: 12,
   },
   selectOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -312,16 +272,7 @@ const cellStyles = StyleSheet.create({
     backgroundColor: Colors.olive,
     borderColor: Colors.olive,
   },
-  checkMark: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
 });
-
-// ---------------------------------------------------------------------------
-// MetadataModal component  [Req 20.4, 20.5]
-// ---------------------------------------------------------------------------
 
 interface MetadataModalProps {
   photo: CapturedPhoto | null;
@@ -443,10 +394,6 @@ const metaStyles = StyleSheet.create({
   },
 });
 
-// ---------------------------------------------------------------------------
-// ActionSheet component — per-photo actions [Req 20.4]
-// ---------------------------------------------------------------------------
-
 interface ActionSheetProps {
   photo: CapturedPhoto | null;
   visible: boolean;
@@ -474,26 +421,29 @@ function ActionSheet({
 
   const actions = [
     {
-      label: '↑ Share',
-      icon: '↑',
+      label: 'Share',
+      iconName: 'share',
       accessibilityLabel: 'Share photo',
       onPress: () => { onClose(); onShare(photo); },
       color: theme.colors.textPrimary,
     },
     {
-      label: photo.isFavorite ? '♥ Remove from Favorites' : '♡ Add to Favorites',
+      label: photo.isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
+      iconName: photo.isFavorite ? 'heart-filled' : 'heart',
       accessibilityLabel: photo.isFavorite ? 'Remove from favorites' : 'Add to favorites',
       onPress: () => { onClose(); onToggleFavorite(photo); },
       color: photo.isFavorite ? Colors.error : theme.colors.textPrimary,
     },
     {
-      label: 'ℹ View Metadata',
+      label: 'View Metadata',
+      iconName: 'info',
       accessibilityLabel: 'View photo metadata',
       onPress: () => { onClose(); onViewMetadata(photo); },
       color: theme.colors.textPrimary,
     },
     {
-      label: '🗑 Delete',
+      label: 'Delete',
+      iconName: 'trash',
       accessibilityLabel: 'Delete photo',
       onPress: () => { onClose(); onDelete(photo); },
       color: Colors.error,
@@ -534,9 +484,18 @@ function ActionSheet({
             accessibilityRole="button"
             accessibilityLabel={action.accessibilityLabel}
           >
-            <Text style={[actionStyles.actionLabel, { color: action.color }]}>
-              {action.label}
-            </Text>
+            <View style={actionStyles.actionRowInner}>
+              <SPIcon
+                name={action.iconName}
+                size={18}
+                color={action.color}
+                fill={action.iconName === 'heart-filled' ? Colors.error : undefined}
+                strokeWidth={2.1}
+              />
+              <Text style={[actionStyles.actionLabel, { color: action.color }]}>
+                {action.label}
+              </Text>
+            </View>
           </Pressable>
         ))}
         <Pressable
@@ -588,6 +547,11 @@ const actionStyles = StyleSheet.create({
     minHeight: 48,
     justifyContent: 'center',
   },
+  actionRowInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   actionLabel: {
     fontSize: Typography.sizes.body,
     fontWeight: Typography.weights.medium as '500',
@@ -605,10 +569,6 @@ const actionStyles = StyleSheet.create({
   },
 });
 
-// ---------------------------------------------------------------------------
-// GalleryScreen — main component
-// ---------------------------------------------------------------------------
-
 export default function GalleryScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -616,138 +576,137 @@ export default function GalleryScreen() {
 
   const cellSize = Math.floor((screenWidth - CELL_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS);
 
-  // Data
   const { photos, loading, error, permissionGranted, loadPhotos, setPhotos } =
     useGalleryPhotos();
 
-  // Reload whenever the screen comes into focus [Req 20.2]
   useFocusEffect(
     useCallback(() => {
       loadPhotos();
     }, [loadPhotos]),
   );
 
-  // Multi-select state [Req 20.3]
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const isMultiSelectMode = selectedIds.size > 0;
 
-  // Action sheet state
   const [actionPhoto, setActionPhoto] = useState<CapturedPhoto | null>(null);
   const [showActionSheet, setShowActionSheet] = useState(false);
 
-  // Metadata modal state [Req 20.5]
   const [metaPhoto, setMetaPhoto] = useState<CapturedPhoto | null>(null);
   const [showMetadata, setShowMetadata] = useState(false);
 
-  // Delete confirm dialog
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CapturedPhoto | 'selected' | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Toast
   const { toastProps, showToast } = useToast();
 
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
+  const handleCellPress = useCallback(
+    (photo: CapturedPhoto) => {
+      if (isMultiSelectMode) {
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(photo.id)) {
+            next.delete(photo.id);
+          } else {
+            next.add(photo.id);
+          }
+          return next;
+        });
+      } else {
+        setActionPhoto(photo);
+        setShowActionSheet(true);
+      }
+    },
+    [isMultiSelectMode],
+  );
 
-  const handleCellPress = useCallback((photo: CapturedPhoto) => {
-    if (isMultiSelectMode) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(photo.id)) next.delete(photo.id);
-        else next.add(photo.id);
-        return next;
-      });
-    } else {
-      setActionPhoto(photo);
-      setShowActionSheet(true);
-    }
-  }, [isMultiSelectMode]);
-
-  const handleCellLongPress = useCallback((photo: CapturedPhoto) => {
-    // Enter multi-select and select tapped photo [Req 20.3]
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.add(photo.id);
-      return next;
-    });
-  }, []);
+  const handleCellLongPress = useCallback(
+    (photo: CapturedPhoto) => {
+      if (!isMultiSelectMode) {
+        setSelectedIds(new Set([photo.id]));
+      }
+    },
+    [isMultiSelectMode],
+  );
 
   const exitMultiSelect = useCallback(() => {
     setSelectedIds(new Set());
   }, []);
 
-  // Share [Req 20.6]
-  const handleShare = useCallback(async (photo: CapturedPhoto) => {
-    try {
-      await Share.share(
-        {
-          url: photo.uri, // iOS
-          message: photo.uri, // Android fallback
-          title: 'Check out my pose!',
-        },
-        {
-          dialogTitle: 'Share photo via…',
-        },
+  const handleShare = useCallback(
+    async (photo: CapturedPhoto) => {
+      try {
+        await Share.share({
+          url: photo.uri,
+          message: photo.poseId
+            ? `Pose photo taken with Snap Pose (${mockPoseName(photo.poseId)})!`
+            : 'Photo taken with Snap Pose!',
+        });
+      } catch {
+        showToast({ message: 'Could not share photo', variant: 'error' });
+      }
+    },
+    [showToast],
+  );
+
+  const handleToggleFavorite = useCallback(
+    (photo: CapturedPhoto) => {
+      const fav = loadFavoriteIds();
+      const willBeFav = !photo.isFavorite;
+
+      if (willBeFav) {
+        fav.add(photo.id);
+      } else {
+        fav.delete(photo.id);
+      }
+      saveFavoriteIds(fav);
+
+      setPhotos((prev) =>
+        prev.map((p) => (p.id === photo.id ? { ...p, isFavorite: willBeFav } : p)),
       );
-    } catch {
-      showToast({ message: 'Could not share photo.', variant: 'error' });
-    }
-  }, [showToast]);
 
-  // Toggle favorite [Req 20.4]
-  const handleToggleFavorite = useCallback((photo: CapturedPhoto) => {
-    const ids = loadFavoriteIds();
-    const isNowFavorite = !photo.isFavorite;
-    if (isNowFavorite) ids.add(photo.id);
-    else ids.delete(photo.id);
-    saveFavoriteIds(ids);
+      showToast({
+        message: willBeFav ? 'Added to favorites' : 'Removed from favorites',
+        variant: willBeFav ? 'success' : 'info',
+      });
+    },
+    [setPhotos, showToast],
+  );
 
-    setPhotos((prev) =>
-      prev.map((p) => (p.id === photo.id ? { ...p, isFavorite: isNowFavorite } : p)),
-    );
-    showToast({
-      message: isNowFavorite ? 'Added to favorites' : 'Removed from favorites',
-      variant: isNowFavorite ? 'success' : 'info',
-    });
-  }, [setPhotos, showToast]);
-
-  // View metadata [Req 20.5]
   const handleViewMetadata = useCallback((photo: CapturedPhoto) => {
     setMetaPhoto(photo);
     setShowMetadata(true);
   }, []);
 
-  // Delete single photo
   const handleDeleteRequest = useCallback((photo: CapturedPhoto) => {
     setDeleteTarget(photo);
     setShowDeleteDialog(true);
   }, []);
 
-  // Delete selected (batch) [Req 20.3]
   const handleBatchDeleteRequest = useCallback(() => {
     setDeleteTarget('selected');
     setShowDeleteDialog(true);
   }, []);
 
   const handleDeleteConfirm = useCallback(async () => {
-    if (!deleteTarget) return;
+    const idsToDelete =
+      deleteTarget === 'selected'
+        ? Array.from(selectedIds)
+        : deleteTarget
+        ? [deleteTarget.id]
+        : [];
+
+    if (idsToDelete.length === 0) {
+      setShowDeleteDialog(false);
+      return;
+    }
+
     setDeleting(true);
     try {
-      let idsToDelete: string[] = [];
-      if (deleteTarget === 'selected') {
-        idsToDelete = Array.from(selectedIds);
-      } else {
-        idsToDelete = [deleteTarget.id];
-      }
-
       await MediaLibrary.deleteAssetsAsync(idsToDelete);
 
-      // Remove from local state
       setPhotos((prev) => prev.filter((p) => !idsToDelete.includes(p.id)));
 
-      // Clean up favorites
       const fav = loadFavoriteIds();
       idsToDelete.forEach((id) => fav.delete(id));
       saveFavoriteIds(fav);
@@ -771,10 +730,6 @@ export default function GalleryScreen() {
       ? `Permanently delete ${selectedIds.size} selected photo${selectedIds.size !== 1 ? 's' : ''}? This cannot be undone.`
       : 'Permanently delete this photo? This cannot be undone.';
 
-  // ---------------------------------------------------------------------------
-  // Render helpers
-  // ---------------------------------------------------------------------------
-
   const renderItem = useCallback(
     ({ item }: { item: CapturedPhoto }) => (
       <PhotoCell
@@ -790,10 +745,6 @@ export default function GalleryScreen() {
   );
 
   const keyExtractor = useCallback((item: CapturedPhoto) => item.id, []);
-
-  // ---------------------------------------------------------------------------
-  // Permission denied state
-  // ---------------------------------------------------------------------------
 
   if (!loading && !permissionGranted) {
     return (
@@ -815,10 +766,6 @@ export default function GalleryScreen() {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Loading state
-  // ---------------------------------------------------------------------------
-
   if (loading) {
     return (
       <View
@@ -832,10 +779,6 @@ export default function GalleryScreen() {
       </View>
     );
   }
-
-  // ---------------------------------------------------------------------------
-  // Error state
-  // ---------------------------------------------------------------------------
 
   if (error) {
     return (
@@ -857,10 +800,6 @@ export default function GalleryScreen() {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Empty state
-  // ---------------------------------------------------------------------------
-
   if (photos.length === 0) {
     return (
       <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
@@ -871,14 +810,19 @@ export default function GalleryScreen() {
             accessibilityRole="button"
             accessibilityLabel="Go back"
           >
-            <Text style={[styles.backText, { color: theme.colors.olive }]}>← Back</Text>
+            <View style={styles.backRow}>
+              <SPIcon name="arrowLeft" size={18} color={theme.colors.olive} strokeWidth={2.4} />
+              <Text style={[styles.backText, { color: theme.colors.olive }]}>Back</Text>
+            </View>
           </Pressable>
           <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]} accessibilityRole="header">
             Gallery
           </Text>
         </View>
         <View style={styles.centred}>
-          <Text style={[styles.emptyIcon]}>📷</Text>
+          <View style={styles.emptyIconCircle}>
+            <SPIcon name="camera" size={44} color={Colors.olive} strokeWidth={1.8} />
+          </View>
           <Text style={[styles.stateTitle, { color: theme.colors.textPrimary }]}>
             No photos yet
           </Text>
@@ -897,10 +841,6 @@ export default function GalleryScreen() {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Main grid
-  // ---------------------------------------------------------------------------
-
   return (
     <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
       {/* ── Header ── */}
@@ -918,7 +858,10 @@ export default function GalleryScreen() {
               accessibilityRole="button"
               accessibilityLabel="Cancel selection"
             >
-              <Text style={[styles.backText, { color: theme.colors.olive }]}>✕ Cancel</Text>
+              <View style={styles.backRow}>
+                <SPIcon name="close" size={16} color={theme.colors.olive} strokeWidth={2.4} />
+                <Text style={[styles.backText, { color: theme.colors.olive }]}>Cancel</Text>
+              </View>
             </Pressable>
             <Text
               style={[styles.headerTitle, { color: theme.colors.textPrimary }]}
@@ -944,7 +887,10 @@ export default function GalleryScreen() {
               accessibilityRole="button"
               accessibilityLabel="Go back"
             >
-              <Text style={[styles.backText, { color: theme.colors.olive }]}>← Back</Text>
+              <View style={styles.backRow}>
+                <SPIcon name="arrowLeft" size={18} color={theme.colors.olive} strokeWidth={2.4} />
+                <Text style={[styles.backText, { color: theme.colors.olive }]}>Back</Text>
+              </View>
             </Pressable>
             <Text
               style={[styles.headerTitle, { color: theme.colors.textPrimary }]}
@@ -968,7 +914,6 @@ export default function GalleryScreen() {
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         numColumns={NUM_COLUMNS}
-        estimatedItemSize={cellSize}
         ItemSeparatorComponent={() => <View style={{ height: CELL_GAP }} />}
         contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.xl }}
         accessibilityLabel="Captured photos grid"
@@ -997,7 +942,7 @@ export default function GalleryScreen() {
         visible={showDeleteDialog}
         title="Delete photo?"
         message={deleteDialogMessage}
-        icon="🗑"
+        icon="trash"
         confirmAction={{
           label: 'Delete',
           variant: 'primary',
@@ -1027,10 +972,6 @@ export default function GalleryScreen() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Screen-level styles
-// ---------------------------------------------------------------------------
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -1048,6 +989,11 @@ const styles = StyleSheet.create({
     minHeight: 48,
     justifyContent: 'center',
     marginRight: Spacing.xs,
+  },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   backText: {
     fontSize: Typography.sizes.body,
@@ -1077,8 +1023,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: Spacing.xl,
   },
-  emptyIcon: {
-    fontSize: 56,
+  emptyIconCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: 'rgba(101, 116, 74, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: Spacing.md,
   },
   stateTitle: {
