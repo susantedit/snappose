@@ -17,6 +17,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import { BorderRadius, Colors, Spacing, Typography } from '@/constants/designTokens';
 import { SPIcon } from '@/components/atoms/SPIcon';
+import { getPoseImageSource } from '@/utils/imageUtils';
 
 interface SPCompareSliderProps {
   referenceUri: string;
@@ -97,7 +98,7 @@ export const SPCompareSlider: React.FC<SPCompareSliderProps> = ({
         ]}
       >
         <Image
-          source={{ uri: referenceUri }}
+          source={getPoseImageSource(referenceUri)}
           style={[styles.referenceImage, { width: containerWidth, height: containerHeight }]}
           resizeMode="cover"
         />

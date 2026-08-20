@@ -110,7 +110,7 @@ export default function CaptureLimitScreen() {
             {isLimitReached ? 'Daily Limit Reached' : 'Capture Limit'}
           </Text>
           <Text style={[styles.subtitle, { color: isDark ? '#AAAAAA' : Colors.textSecondary }]}>
-            Snap Pose is 100% free — supported by ads.
+            POSEHANUM is 100% free — supported by ads.
           </Text>
         </Animated.View>
 
@@ -200,7 +200,7 @@ export default function CaptureLimitScreen() {
           <InfoRow iconName="timer" text="Take up to 10 free photos every 6 hours" isDark={isDark} />
           <InfoRow iconName="sparkles" text="Watch an ad to unlock 5 bonus captures" isDark={isDark} />
           <InfoRow iconName="refresh" text="Counter resets automatically after 6 hours" isDark={isDark} />
-          <InfoRow iconName="heart-filled" iconColor={Colors.error} text="Snap Pose is always free — no subscriptions" isDark={isDark} />
+          <InfoRow iconName="heart-filled" iconColor={Colors.error} text="POSEHANUM is always free — no subscriptions" isDark={isDark} />
         </Animated.View>
       </ScrollView>
     </View>

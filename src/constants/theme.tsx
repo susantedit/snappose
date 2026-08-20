@@ -24,6 +24,8 @@ import Animated, {
 import { mmkv } from '@/database/mmkv/mmkvClient';
 import { MMKV_KEYS } from '@/database/mmkv/keys';
 import { AnimationDurations, Colors } from './designTokens';
+import { InstagramFonts, StoryTextStyles, type InstagramFontStyle } from './instagramTypography';
+export type { InstagramFontStyle };
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,6 +62,10 @@ export interface Theme {
   };
   /** Inter weight font families (undefined → system sans-serif). */
   fontFamily: FontFamily;
+  /** Instagram 2026 Typography Suite (Sans, Pen, Mono). */
+  instagramFonts: typeof InstagramFonts;
+  /** 13 Instagram Stories & Reels Style Presets. */
+  storyTextStyles: typeof StoryTextStyles;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +107,8 @@ export const lightTheme: Theme = {
     statusBar: 'dark',
   },
   fontFamily: resolvedFontFamily,
+  instagramFonts: InstagramFonts,
+  storyTextStyles: StoryTextStyles,
 };
 
 export const darkTheme: Theme = {
@@ -112,8 +120,8 @@ export const darkTheme: Theme = {
     border: Colors.borderDark,
     divider: Colors.borderDark,
     textPrimary: Colors.textInverse,
-    textSecondary: '#AAAAAA',
-    textDisabled: '#555555',
+    textSecondary: '#D1D1D6', // Lightened high-contrast grey (WCAG AA compliant)
+    textDisabled: '#7A7A80',
     textInverse: Colors.textPrimary,
     olive: Colors.olive,
     oliveDark: Colors.oliveDark,
@@ -123,6 +131,8 @@ export const darkTheme: Theme = {
     statusBar: 'light',
   },
   fontFamily: resolvedFontFamily,
+  instagramFonts: InstagramFonts,
+  storyTextStyles: StoryTextStyles,
 };
 
 // ---------------------------------------------------------------------------

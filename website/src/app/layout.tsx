@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     type: 'website',
     images: [
       {
-        url: '/og-image.png',
+        url: 'https://posehanum.app/og-image.png',
         width: 1200,
         height: 630,
         alt: 'POSEHANUM — AI Pose Coach & Photography Assistant',
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
     description:
       'Pose Garौँ. Perfect Shot Lिऔँ. Real-time AI pose matching, voice coaching, and smart auto-capture.',
     creator: '@Susantedit',
-    images: ['/og-image.png'],
+    images: ['https://posehanum.app/og-image.png'],
   },
   robots: {
     index: true,
@@ -99,7 +99,6 @@ const jsonLd = {
       },
       sameAs: [
         'https://github.com/susantedit',
-        'https://www.youtube.com/@developersusant',
         'https://instagram.com/susantgamerz',
         'https://facebook.com/Kantaraj.Luitel',
         'https://linkedin.com/in/kantaraj-luitel',

@@ -11,6 +11,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  BackHandler,
   Dimensions,
   Share,
   StyleSheet,
@@ -41,6 +42,7 @@ import { MotionEasings, useReducedMotion } from '@/constants/motion';
 import { SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
 import { useFavorites } from '@/features/favorites/hooks/useFavorites';
 import { usePersonalizationStore } from '@/stores/personalizationStore';
+import { getPoseImageSource } from '@/utils/imageUtils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_IMAGE_HEIGHT = SCREEN_WIDTH * 1.15;
@@ -59,6 +61,23 @@ export default function PoseDetailScreen() {
   const pose = useMemo(() => {
     return SNAP_POSE_DATASET.find((p) => p.id === id) ?? SNAP_POSE_DATASET[0];
   }, [id]);
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  }, []);
+
+  // Hardware BackHandler support on Android
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [handleBack]);
 
   // Track POSE_OPENED signal on mount
   useEffect(() => {
@@ -124,7 +143,7 @@ export default function PoseDetailScreen() {
     try {
       await Share.share({
         title: pose.title,
-        message: `Check out the "${pose.title}" pose on Snap Pose! Perfect for ${pose.category ?? pose.categoryId} photography.`,
+        message: `Check out the "${pose.title}" pose on POSEHANUM! Perfect for ${pose.category ?? pose.categoryId} photography.`,
         url: pose.imageUrl,
       });
     } catch {}
@@ -181,6 +200,7 @@ export default function PoseDetailScreen() {
     <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
       {/* Top Floating Navigation Header */}
       <View
+        pointerEvents="box-none"
         style={[
           styles.floatingHeader,
           {
@@ -189,8 +209,9 @@ export default function PoseDetailScreen() {
         ]}
       >
         <AnimatedPressable
-          onPress={() => router.back()}
+          onPress={handleBack}
           scaleTo={0.88}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
           style={styles.headerButtonCircle}
           accessibilityLabel="Back"
         >
@@ -237,7 +258,7 @@ export default function PoseDetailScreen() {
         {/* ── 1. Hero Image with Zoom Reveal & Parallax ─────────────── */}
         <View style={styles.heroContainer}>
           <Animated.Image
-            source={{ uri: pose.imageUrl }}
+            source={getPoseImageSource(pose.imageUrl)}
             style={[styles.heroImage, heroImageStyle]}
             resizeMode="cover"
           />
@@ -277,7 +298,7 @@ export default function PoseDetailScreen() {
             />
           </View>
 
-          {/* Title & Description */}
+          {/* Title & Description with WCAG AA compliant textSecondary */}
           <Text
             style={[
               styles.poseTitle,
@@ -291,16 +312,16 @@ export default function PoseDetailScreen() {
             <Text
               style={[
                 styles.poseDescription,
-                { color: isDark ? '#AAAAAA' : Colors.textSecondary },
+                { color: isDark ? '#D1D1D6' : Colors.textSecondary },
               ]}
             >
               {pose.description}
             </Text>
           )}
 
-          {/* ── Explicit Recommendation Tuning Controls ────────────── */}
-          <View style={styles.feedbackRow}>
-            <Text style={[styles.feedbackTitle, { color: isDark ? '#888' : '#777' }]}>
+          {/* ── Explicit Recommendation Tuning Controls with 44px touch targets ── */}
+          <View style={[styles.feedbackRow, { backgroundColor: isDark ? '#262628' : 'rgba(0,0,0,0.04)' }]}>
+            <Text style={[styles.feedbackTitle, { color: isDark ? '#A3B899' : '#4F5B38' }]}>
               RECOMMENDATION FEEDBACK
             </Text>
             <View style={styles.feedbackButtons}>
@@ -311,13 +332,14 @@ export default function PoseDetailScreen() {
                 style={[
                   styles.feedbackBtn,
                   currentFeedback === 'more_like_this' && styles.feedbackBtnActive,
+                  { backgroundColor: currentFeedback === 'more_like_this' ? Colors.olive : isDark ? '#323234' : 'rgba(255,255,255,0.85)' },
                 ]}
               >
-                <SPIcon name="heart-filled" size={13} color={currentFeedback === 'more_like_this' ? '#FFF' : Colors.olive} fill={currentFeedback === 'more_like_this' ? '#FFF' : Colors.olive} />
+                <SPIcon name="heart-filled" size={15} color={currentFeedback === 'more_like_this' ? '#FFF' : Colors.olive} fill={currentFeedback === 'more_like_this' ? '#FFF' : Colors.olive} />
                 <Text
                   style={[
                     styles.feedbackBtnText,
-                    currentFeedback === 'more_like_this' && { color: '#FFF' },
+                    currentFeedback === 'more_like_this' ? { color: '#FFF' } : { color: isDark ? '#E5E5EA' : Colors.textPrimary },
                   ]}
                 >
                   More like this
@@ -331,13 +353,14 @@ export default function PoseDetailScreen() {
                 style={[
                   styles.feedbackBtn,
                   currentFeedback === 'dont_recommend' && styles.feedbackBtnActive,
+                  { backgroundColor: currentFeedback === 'dont_recommend' ? '#E53935' : isDark ? '#323234' : 'rgba(255,255,255,0.85)' },
                 ]}
               >
-                <SPIcon name="close" size={12} color={currentFeedback === 'dont_recommend' ? '#FFF' : '#888'} strokeWidth={2.4} />
+                <SPIcon name="close" size={14} color={currentFeedback === 'dont_recommend' ? '#FFF' : isDark ? '#AAA' : '#777'} strokeWidth={2.4} />
                 <Text
                   style={[
                     styles.feedbackBtnText,
-                    currentFeedback === 'dont_recommend' && { color: '#FFF' },
+                    currentFeedback === 'dont_recommend' ? { color: '#FFF' } : { color: isDark ? '#E5E5EA' : Colors.textPrimary },
                   ]}
                 >
                   Not for me
@@ -346,14 +369,14 @@ export default function PoseDetailScreen() {
             </View>
           </View>
 
-          {/* ── 3. Step-by-Step Instructions Sequence ──────────────── */}
+          {/* ── 3. Step-by-Step Guidance ─────────────────────────────── */}
           <View style={styles.instructionsSection}>
             <View style={styles.sectionTitleRow}>
-              <SPIcon name="sparkles" size={16} color={Colors.olive} strokeWidth={2.4} />
+              <SPIcon name="sparkles" size={16} color={Colors.olive} />
               <Text
                 style={[
                   styles.sectionTitle,
-                  { color: isDark ? '#FFFFFF' : Colors.textPrimary },
+                  { color: isDark ? '#A3B899' : '#4F5B38' },
                 ]}
               >
                 HOW TO STRIKE THIS POSE
@@ -491,20 +514,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    zIndex: 20,
+    zIndex: 999,
+    elevation: 12,
   },
   headerButtonCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
-    elevation: 4,
+    elevation: 6,
+    zIndex: 1000,
   },
   headerRightActions: {
     flexDirection: 'row',
@@ -579,10 +604,12 @@ const styles = StyleSheet.create({
   feedbackBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
+    justifyContent: 'center',
+    minHeight: 44,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.7)',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.08)',
@@ -592,14 +619,14 @@ const styles = StyleSheet.create({
     borderColor: Colors.darkAccent,
   },
   feedbackBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: Colors.textPrimary,
   },
 
   // Instructions
   instructionsSection: {
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
   },
   sectionTitleRow: {
     flexDirection: 'row',
@@ -619,7 +646,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    padding: 14,
+    padding: 16,
     borderRadius: 18,
     borderWidth: 1,
   },
@@ -658,11 +685,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: Spacing.md,
+    minHeight: 54,
+    paddingVertical: 16,
+    paddingHorizontal: Spacing.lg,
     borderRadius: BorderRadius.button,
     backgroundColor: `${Colors.olive}20`,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.olive,
     gap: 6,
   },
@@ -670,7 +698,7 @@ const styles = StyleSheet.create({
     color: Colors.olive,
     fontSize: 12,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   ctaButton: {
     flex: 1,
@@ -678,7 +706,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 15,
+    minHeight: 54,
+    paddingVertical: 16,
     borderRadius: BorderRadius.button,
     gap: 10,
     shadowColor: Colors.olive,
@@ -689,7 +718,7 @@ const styles = StyleSheet.create({
   },
   ctaButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
     letterSpacing: 0.8,
   },

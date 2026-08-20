@@ -9,8 +9,9 @@
  *  5. Direct transition to live Camera assist mode
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
+  BackHandler,
   Image,
   ScrollView,
   StyleSheet,
@@ -49,6 +50,22 @@ export default function CustomPoseUploadScreen() {
   const { theme } = useTheme();
   const { addCustomPose } = useCustomPoseStore();
   const { toastProps, showToast } = useToast();
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  }, []);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [handleBack]);
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -164,7 +181,7 @@ export default function CustomPoseUploadScreen() {
       imageUri,
       category: selectedCategory,
       difficulty,
-      landmarks: extractionResult?.normalised,
+      landmarks: extractionResult?.normalised ?? undefined,
       estimatedDistance: extractionResult?.detectedPoseType === 'portrait' ? 1.2 : 1.8,
       cameraAngle: 'Eye Level',
       lighting: 'Natural Light',
@@ -201,7 +218,8 @@ export default function CustomPoseUploadScreen() {
       {/* Header */}
       <View style={styles.header}>
         <AnimatedPressable
-          onPress={() => router.back()}
+          onPress={handleBack}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
           style={styles.backButton}
           accessibilityLabel="Go back"
         >
@@ -307,7 +325,7 @@ export default function CustomPoseUploadScreen() {
                 Choose Pose from Gallery
               </Text>
               <Text style={[styles.dropZoneSubtitle, { color: theme.colors.textSecondary }]}>
-                Select any photo or reference from Instagram, Pinterest, or your camera roll to extract the 33-landmark pose skeleton.
+                Select any photo or reference from your gallery or saved images to extract the 33-landmark pose skeleton.
               </Text>
               <View style={[styles.selectButton, { backgroundColor: theme.colors.olive }]}>
                 <Text style={styles.selectButtonText}>SELECT PHOTO</Text>

@@ -4,6 +4,11 @@ const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
+// Enable wasm assets for expo-sqlite and web workers
+if (!config.resolver.assetExts.includes('wasm')) {
+  config.resolver.assetExts.push('wasm');
+}
+
 const defaultResolveRequest = config.resolver.resolveRequest;
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {

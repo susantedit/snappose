@@ -8,8 +8,9 @@
  *  - Launch directly into Camera Assist Mode
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
+  BackHandler,
   Dimensions,
   Image,
   StyleSheet,
@@ -36,6 +37,7 @@ import { SPButton } from '@/components/atoms/SPButton';
 import { AnimatedPressable } from '@/components/motion/AnimatedPressable';
 import { SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
 import { useCustomPoseStore } from '@/stores/customPoseStore';
+import { getPoseImageSource } from '@/utils/imageUtils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -54,6 +56,22 @@ export default function Pose3DStudioScreen() {
 
   const [activeAngleIdx, setActiveAngleIdx] = useState(1);
   const [viewMode, setViewMode] = useState<'3d' | 'reference'>('3d');
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  }, []);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [handleBack]);
 
   const pose = useMemo(() => {
     const standard = SNAP_POSE_DATASET.find((p) => p.id === id);
@@ -132,7 +150,8 @@ export default function Pose3DStudioScreen() {
       {/* Header */}
       <View style={styles.header}>
         <AnimatedPressable
-          onPress={() => router.back()}
+          onPress={handleBack}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
           style={styles.backButton}
           accessibilityLabel="Go back"
         >
@@ -154,13 +173,13 @@ export default function Pose3DStudioScreen() {
           <Animated.View style={[styles.canvasBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.olive }]}>
             {viewMode === '3d' ? (
               <Animated.View style={[styles.modelContainer, modelAnimatedStyle]}>
-                <Image source={{ uri: pose.imageUrl }} style={styles.poseImage} resizeMode="cover" />
+                <Image source={getPoseImageSource(pose.imageUrl)} style={styles.poseImage} resizeMode="cover" />
 
                 {/* 3D Ring Floor Plate */}
                 <View style={[styles.floorRing, { borderColor: `${theme.colors.oliveDark}60` }]} />
               </Animated.View>
             ) : (
-              <Image source={{ uri: pose.imageUrl }} style={styles.flatReferenceImage} resizeMode="contain" />
+              <Image source={getPoseImageSource(pose.imageUrl)} style={styles.flatReferenceImage} resizeMode="contain" />
             )}
 
             {/* Canvas HUD Overlay */}

@@ -31,6 +31,7 @@ import { SPToast, useToast } from '@/components/molecules/SPToast';
 import { SPIcon } from '@/components/atoms/SPIcon';
 import { SNAP_POSE_CATEGORIES, SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
 import { useFavorites } from '@/features/favorites/hooks/useFavorites';
+import { saveImageToGallery } from '@/utils/saveImage';
 import type { Pose } from '@/features/poses/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -89,6 +90,19 @@ export default function CategoryScreen() {
     [isFavorite, toggleFavorite, showToast]
   );
 
+  const handleDownloadCover = useCallback(async () => {
+    if (!category?.image) return;
+    showToast({
+      message: 'Saving cover photo...',
+      variant: 'info',
+    });
+    const result = await saveImageToGallery(category.image, `snappose_cover_${category.slug || category.id}`);
+    showToast({
+      message: result.message,
+      variant: result.success ? 'success' : 'error',
+    });
+  }, [category, showToast]);
+
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
       <ScrollView
@@ -118,7 +132,16 @@ export default function CategoryScreen() {
               {category.name}
             </Text>
           </View>
-          <View style={{ width: 40 }} />
+          <Pressable
+            onPress={handleDownloadCover}
+            style={[
+              styles.backButton,
+              { backgroundColor: isDark ? '#242424' : '#EAE4D8' },
+            ]}
+            accessibilityLabel="Download category cover photo"
+          >
+            <SPIcon name="download" size={18} color={isDark ? '#FFF' : Colors.textPrimary} strokeWidth={2.2} />
+          </Pressable>
         </View>
 
         {/* Category Hero Banner */}
@@ -126,8 +149,18 @@ export default function CategoryScreen() {
           <Image source={{ uri: category.image }} style={styles.heroImg} resizeMode="cover" />
           <View style={styles.heroOverlay} />
           <View style={styles.heroContent}>
-            <Text style={styles.heroTitle}>{category.name} Photography</Text>
-            <Text style={styles.heroCount}>{poses.length} curated pose inspirations</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroTitle}>{category.name} Photography</Text>
+              <Text style={styles.heroCount}>{poses.length} curated pose inspirations</Text>
+            </View>
+            <Pressable
+              onPress={handleDownloadCover}
+              style={styles.coverDownloadBadge}
+              accessibilityLabel="Save cover photo to gallery"
+            >
+              <SPIcon name="download" size={14} color="#FFFFFF" strokeWidth={2.2} />
+              <Text style={styles.coverDownloadText}>Save Cover</Text>
+            </Pressable>
           </View>
         </Animated.View>
 
@@ -218,6 +251,10 @@ const styles = StyleSheet.create({
     bottom: Spacing.md,
     left: Spacing.md,
     right: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 10,
   },
   heroTitle: {
     color: '#FFF',
@@ -230,6 +267,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 2,
+  },
+  coverDownloadBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.button,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  coverDownloadText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   posesGrid: {
     flexDirection: 'row',

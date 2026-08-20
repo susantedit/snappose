@@ -78,12 +78,16 @@ export class PrivacyDataServiceImpl implements PrivacyService {
       errors.push(`Failed to clear notifications: ${err?.message}`);
     }
 
-    // 5. Purge Favorites
+    // 5. Purge Favorites (Batched atomic deletion)
     try {
       const favoritesRepo = new SQLiteFavoritesRepository();
-      const allFavs = await favoritesRepo.findAll();
-      for (const fav of allFavs) {
-        await favoritesRepo.remove(fav.poseId);
+      if (typeof favoritesRepo.removeAll === 'function') {
+        await favoritesRepo.removeAll();
+      } else {
+        const allFavs = await favoritesRepo.findAll();
+        for (const fav of allFavs) {
+          await favoritesRepo.remove(fav.poseId);
+        }
       }
       deletedItems.favorites = true;
     } catch (err: any) {

@@ -1,24 +1,18 @@
-/**
- * usePoseDetection — React hook managing on-device MediaPipe pose detector lifecycle & live tracking.
- */
-
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { MediaPipePoseDetector } from '../infrastructure/MediaPipePoseDetector';
 import type { CameraFrame, LandmarkSet } from '../types';
+import type { AiDetectionStatus } from '../domain/types';
 
 export interface UsePoseDetectionOptions {
   autoInit?: boolean;
-  streaming?: boolean;
-  targetFps?: number;
 }
 
 export function usePoseDetection({
   autoInit = true,
-  streaming = true,
-  targetFps = 30,
 }: UsePoseDetectionOptions = {}) {
   const detectorRef = useRef<MediaPipePoseDetector | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [detectionStatus, setDetectionStatus] = useState<AiDetectionStatus>('UNINITIALISED');
   const [lastLandmarks, setLastLandmarks] = useState<LandmarkSet | null>(null);
   const [inferenceTimeMs, setInferenceTimeMs] = useState(0);
 
@@ -32,6 +26,7 @@ export function usePoseDetection({
     detector.initialise().then(() => {
       if (mounted) {
         setIsReady(true);
+        setDetectionStatus('NO_PERSON');
       }
     });
 
@@ -40,47 +35,29 @@ export function usePoseDetection({
       detector.destroy();
       detectorRef.current = null;
       setIsReady(false);
+      setDetectionStatus('UNINITIALISED');
     };
   }, [autoInit]);
 
-  // Single frame detection
+  // Frame detection — consumes real native frame buffer
   const detect = useCallback(async (frame?: CameraFrame): Promise<LandmarkSet | null> => {
-    if (!detectorRef.current || !isReady) return null;
-    const start = Date.now();
-    const result = await detectorRef.current.detect(frame);
-    const elapsed = Date.now() - start;
-    setInferenceTimeMs(elapsed);
-    if (result) {
-      setLastLandmarks(result);
+    if (!detectorRef.current || !isReady) {
+      setDetectionStatus('UNINITIALISED');
+      return null;
     }
-    return result;
+    const outcome = await detectorRef.current.detectDetailed(frame);
+    setDetectionStatus(outcome.status);
+    setInferenceTimeMs(outcome.inferenceMs);
+    setLastLandmarks(outcome.landmarks);
+    return outcome.landmarks;
   }, [isReady]);
-
-  // Continuous frame streaming
-  useEffect(() => {
-    if (!isReady || !streaming) return;
-
-    let active = true;
-    const frameIntervalMs = Math.round(1000 / targetFps);
-
-    const interval = setInterval(async () => {
-      if (!active || !detectorRef.current) return;
-      const result = await detectorRef.current.detect();
-      if (active && result) {
-        setLastLandmarks(result);
-      }
-    }, frameIntervalMs);
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [isReady, streaming, targetFps]);
 
   return {
     isReady,
+    detectionStatus,
     detect,
     lastLandmarks,
     inferenceTimeMs,
   };
 }
+

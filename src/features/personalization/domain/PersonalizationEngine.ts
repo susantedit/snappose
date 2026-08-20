@@ -53,9 +53,13 @@ export class PersonalizationEngine {
 
     // 1. Pose Type / Tag Affinity
     let typeAffinity = 0.5;
-    if (pose.tags && pose.tags.length > 0) {
-      const tagScores = pose.tags.map((t) => profile.preferredPoseTypes[t.toLowerCase()] ?? 0.5);
-      typeAffinity = tagScores.reduce((a, b) => a + b, 0) / tagScores.length;
+    const tags = pose.tags;
+    if (tags && tags.length > 0) {
+      let sum = 0;
+      for (let i = 0; i < tags.length; i++) {
+        sum += profile.preferredPoseTypes[tags[i].toLowerCase()] ?? 0.5;
+      }
+      typeAffinity = sum / tags.length;
     }
 
     // 2. Camera Angle Affinity
@@ -136,18 +140,18 @@ export class PersonalizationEngine {
 
     return {
       pose,
-      totalScore: Number(totalScore.toFixed(4)),
+      totalScore: Math.round(totalScore * 10000) / 10000,
       explanation,
       isExploration: !isInteracted && catAffinity < 0.6,
       scoreBreakdown: {
-        category: Number(catAffinity.toFixed(2)),
-        poseType: Number(typeAffinity.toFixed(2)),
-        cameraAngle: Number(angleAffinity.toFixed(2)),
-        historicalSuccess: Number(historicalSuccess.toFixed(2)),
-        matchScore: Number(matchScoreWeight.toFixed(2)),
-        recentInterest: Number(recentInterest.toFixed(2)),
-        context: Number(contextRelevance.toFixed(2)),
-        novelty: Number(novelty.toFixed(2)),
+        category: Math.round(catAffinity * 100) / 100,
+        poseType: Math.round(typeAffinity * 100) / 100,
+        cameraAngle: Math.round(angleAffinity * 100) / 100,
+        historicalSuccess: Math.round(historicalSuccess * 100) / 100,
+        matchScore: Math.round(matchScoreWeight * 100) / 100,
+        recentInterest: Math.round(recentInterest * 100) / 100,
+        context: Math.round(contextRelevance * 100) / 100,
+        novelty: Math.round(novelty * 100) / 100,
       },
     };
   }
@@ -164,10 +168,12 @@ export class PersonalizationEngine {
   ): ScoredRecommendation[] {
     if (!poses || poses.length === 0) return [];
 
-    // Score all candidate poses
-    const scoredList = poses.map((p) =>
-      this.scorePose(p, profile, context, interactedPoseIds),
-    );
+    // Score all candidate poses in a fast loop
+    const n = poses.length;
+    const scoredList = new Array<ScoredRecommendation>(n);
+    for (let i = 0; i < n; i++) {
+      scoredList[i] = this.scorePose(poses[i], profile, context, interactedPoseIds);
+    }
 
     // Sort by total score descending
     scoredList.sort((a, b) => b.totalScore - a.totalScore);
@@ -184,16 +190,18 @@ export class PersonalizationEngine {
     const exploitationPicks = scoredList.slice(0, exploitCount);
     const chosenIds = new Set(exploitationPicks.map((s) => s.pose.id));
 
-    // Diverse exploration items (novel or high-novelty poses outside dominant categories)
-    const explorationCandidates = scoredList
-      .filter((s) => !chosenIds.has(s.pose.id))
-      .sort((a, b) => b.scoreBreakdown.novelty - a.scoreBreakdown.novelty);
-
-    const explorationPicks = explorationCandidates.slice(0, exploreCount).map((item) => ({
-      ...item,
-      isExploration: true,
-      explanation: 'Try something new',
-    }));
+    // Diverse exploration items from novel/discovery candidates
+    const explorationPicks: ScoredRecommendation[] = [];
+    for (let i = scoredList.length - 1; i >= 0 && explorationPicks.length < exploreCount; i--) {
+      const item = scoredList[i];
+      if (!chosenIds.has(item.pose.id)) {
+        explorationPicks.push({
+          ...item,
+          isExploration: true,
+          explanation: 'Try something new',
+        });
+      }
+    }
 
     // Combine and return
     return [...exploitationPicks, ...explorationPicks];
@@ -229,5 +237,35 @@ export class PersonalizationEngine {
     }
 
     return 'Recommended for your composition';
+  }
+
+  /**
+   * "Try Something New" — Deliberately selects a pose outside the user's normal preference habits.
+   */
+  public getTrySomethingNewPose(
+    poses: Pose[],
+    profile: UserPreferenceProfile,
+  ): ScoredRecommendation | null {
+    if (!poses || poses.length === 0) return null;
+
+    // Find candidate poses with lower category/type affinity but high quality
+    const scoredList = poses.map((p) => this.scorePose(p, profile));
+    const explorationCandidates = scoredList.filter(
+      (item) => item.scoreBreakdown.category < 0.65 || item.scoreBreakdown.poseType < 0.65,
+    );
+
+    if (explorationCandidates.length === 0) {
+      return scoredList[Math.floor(Math.random() * scoredList.length)];
+    }
+
+    const picked = explorationCandidates[Math.floor(Math.random() * explorationCandidates.length)];
+    const mainFavCategory = Object.entries(profile.preferredCategories)
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || 'standing';
+
+    return {
+      ...picked,
+      isExploration: true,
+      explanation: `You usually choose ${mainFavCategory} poses. Try this ${picked.pose.title}!`,
+    };
   }
 }

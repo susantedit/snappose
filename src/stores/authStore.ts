@@ -15,6 +15,10 @@ interface AuthState {
   signInAnonymously: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
+  signUp: (email: string, pass: string, displayName?: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
+  sendEmailVerification: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   signOut: () => Promise<void>;
   clearError: () => void;
 }
@@ -66,6 +70,46 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user, isLoading: false });
     } catch (err: any) {
       set({ error: err?.message || 'Email sign-in failed', isLoading: false });
+    }
+  },
+
+  signUp: async (email: string, pass: string, displayName?: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const user = await firebaseAuthAdapter.signUp(email, pass, displayName);
+      set({ user, isLoading: false });
+    } catch (err: any) {
+      set({ error: err?.message || 'Sign-up failed', isLoading: false });
+    }
+  },
+
+  sendPasswordReset: async (email: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      await firebaseAuthAdapter.sendPasswordReset(email);
+      set({ isLoading: false });
+    } catch (err: any) {
+      set({ error: err?.message || 'Password reset failed', isLoading: false });
+    }
+  },
+
+  sendEmailVerification: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      // In local mode or mock Firebase adapter, simulated email verification dispatch
+      set({ isLoading: false });
+    } catch (err: any) {
+      set({ error: err?.message || 'Failed to send verification email', isLoading: false });
+    }
+  },
+
+  deleteAccount: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      await firebaseAuthAdapter.deleteAccount();
+      set({ user: null, isLoading: false });
+    } catch (err: any) {
+      set({ error: err?.message || 'Delete account failed', isLoading: false });
     }
   },
 

@@ -1,19 +1,21 @@
 /**
- * HomeScreen — Editorial Photography, Cinematic Motion & Personalized AI Feed for Snap Pose.
+ * HomeScreen / References Feed — Complete AI Photography Director Experience.
  *
- * Features:
- *  • Dynamic "Recommended For You" carousel powered by On-Device Personalization Engine
- *  • Editorial Explanation Badges ("Because you love mountain poses", "Try something new")
- *  • Staggered Hero Entrance Sequence with Scroll Parallax
- *  • Smooth Category Slider with active pill indicator
- *  • Trending & Editor's Picks horizontal carousels
- *  • 2-Column masonry pose cards with tactile spring micro-interactions
+ * Flow Structure:
+ *  1. Editorial Header ("References" • "Find your next pose")
+ *  2. Interactive Human T-Pose Studio Banner (SPTposeHero)
+ *  3. Contextual Shot Builder (SPShotBuilder)
+ *  4. Personalized "For Your Style" AI Discovery
+ *  5. "My Signature Poses" Collection
+ *  6. Category Filter Pills (All, Beach, Cafe, Nature, Trek, Selfie, etc.)
+ *  7. "Try Something New" Exploration Section
+ *  8. Asymmetric 2-Column Editorial Masonry Grid
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
-  Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,11 +23,8 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import Animated, {
-  FadeIn,
   FadeInDown,
-  interpolate,
   useAnimatedScrollHandler,
-  useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,23 +34,35 @@ import {
   BorderRadius,
   Colors,
   Spacing,
-  Typography,
 } from '@/constants/designTokens';
 
 import { SPPoseCard } from '@/components/molecules/SPPoseCard';
 import { SPToast, useToast } from '@/components/molecules/SPToast';
 import { SPIcon } from '@/components/atoms/SPIcon';
 import { AnimatedPressable } from '@/components/motion/AnimatedPressable';
-import { MotionEasings, useReducedMotion } from '@/constants/motion';
+import { useReducedMotion } from '@/constants/motion';
 import { useFavorites } from '@/features/favorites/hooks/useFavorites';
 import { usePersonalizationStore } from '@/stores/personalizationStore';
 import { SNAP_POSE_CATEGORIES, SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
-import type { ScoredRecommendation } from '@/features/personalization';
+import type { Pose } from '@/features/poses/types';
+
+import { SPTposeHero } from '@/features/poses/components/SPTposeHero';
+import { SPShotBuilder } from '@/features/poses/components/SPShotBuilder';
+import { SPOnboardingChecklist } from '@/components/organisms/SPOnboardingChecklist';
+import { PersonalizationEngine } from '@/features/personalization/domain/PersonalizationEngine';
+import { PhotographyDNAService } from '@/features/personalization/PhotographyDNAService';
+
+import { TEMPLATE_DATASET } from '@/features/templates/data/templateData';
+import { Image } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HORIZONTAL_PADDING = Spacing.md;
-const CARD_GAP = 12;
-const CARD_WIDTH = (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - CARD_GAP) / 2;
+
+const HORIZONTAL_PADDING = 16;
+const COLUMN_GAP = 14;
+const COLUMN_WIDTH = (SCREEN_WIDTH - HORIZONTAL_PADDING * 2 - COLUMN_GAP) / 2;
+
+const engine = new PersonalizationEngine();
+const dnaService = new PhotographyDNAService();
 
 // ---------------------------------------------------------------------------
 // Category Chip Component
@@ -68,8 +79,6 @@ function CategoryChip({ id, name, isSelected, onSelect }: CategoryChipProps) {
   const { theme } = useTheme();
   const isDark = theme.mode === 'dark';
 
-  const iconColor = isSelected ? '#FFFFFF' : isDark ? '#DDD' : Colors.textPrimary;
-
   return (
     <AnimatedPressable
       onPress={() => onSelect(id)}
@@ -83,25 +92,19 @@ function CategoryChip({ id, name, isSelected, onSelect }: CategoryChipProps) {
         isSelected
           ? {
               backgroundColor: Colors.olive,
-              borderColor: Colors.darkAccent,
-              elevation: 4,
-              shadowColor: Colors.olive,
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.35,
-              shadowRadius: 6,
+              borderColor: Colors.olive,
             }
           : {
-              backgroundColor: isDark ? '#242424' : '#EFE9DC',
-              borderColor: isDark ? '#383838' : '#DFD7C7',
+              backgroundColor: isDark ? '#222520' : '#EFE9DC',
+              borderColor: isDark ? '#333630' : '#E3DBD0',
             },
       ]}
     >
-      <SPIcon name={id} size={15} color={iconColor} strokeWidth={2.2} />
       <Text
         style={[
           styles.chipLabel,
           {
-            color: isSelected ? '#FFFFFF' : isDark ? '#DDD' : Colors.textPrimary,
+            color: isSelected ? '#FFFFFF' : isDark ? '#E5E8E0' : '#2C3026',
             fontWeight: isSelected ? '700' : '500',
           },
         ]}
@@ -122,6 +125,7 @@ export default function HomeScreen() {
   const { isFavorite, toggleFavorite } = useFavorites();
   const { toastProps, showToast } = useToast();
   const reduceMotion = useReducedMotion();
+  const scrollViewRef = useRef<Animated.ScrollView>(null);
 
   // Personalization Engine Store
   const {
@@ -129,35 +133,18 @@ export default function HomeScreen() {
     recordSignal,
     isPersonalizationEnabled,
     outfitPreference,
+    profile,
   } = usePersonalizationStore();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  // Parallax Scroll Tracking
+  // Scroll tracking
   const scrollY = useSharedValue(0);
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       scrollY.value = event.contentOffset.y;
     },
-  });
-
-  const heroParallaxStyle = useAnimatedStyle(() => {
-    if (reduceMotion) return {};
-    return {
-      transform: [
-        { translateY: scrollY.value * 0.15 },
-        { scale: interpolate(scrollY.value, [-100, 0, 200], [1.12, 1.0, 0.95], 'clamp') },
-      ],
-    };
-  });
-
-  const heroTextParallaxStyle = useAnimatedStyle(() => {
-    if (reduceMotion) return {};
-    return {
-      transform: [{ translateY: scrollY.value * 0.05 }],
-      opacity: interpolate(scrollY.value, [0, 180], [1, 0.4], 'clamp'),
-    };
   });
 
   // Filtered poses based on selected category
@@ -168,44 +155,75 @@ export default function HomeScreen() {
     return SNAP_POSE_DATASET.filter((p) => p.categoryId === selectedCategory);
   }, [selectedCategory]);
 
-  // Compute Personalized Recommendations
-  const personalizedRecommendations = useMemo<ScoredRecommendation[]>(() => {
+  // Personalized recommendations
+  const personalizedRecommendations = useMemo(() => {
+    if (!isPersonalizationEnabled || !profile || profile.totalInteractions === 0) return [];
     return getRecommendedPoses(
       SNAP_POSE_DATASET,
       {
         currentCategory: selectedCategory !== 'all' ? selectedCategory : undefined,
         outfitCategory: outfitPreference,
       },
-      8,
+      6,
     );
-  }, [getRecommendedPoses, selectedCategory, outfitPreference]);
+  }, [getRecommendedPoses, selectedCategory, outfitPreference, isPersonalizationEnabled, profile]);
 
-  const trendingPoses = useMemo(() => SNAP_POSE_DATASET.slice(0, 6), []);
-  const editorsPicks = useMemo(() => SNAP_POSE_DATASET.slice(6, 12), []);
+  // "Try Something New" exploration candidate
+  const trySomethingNewRec = useMemo(() => {
+    return engine.getTrySomethingNewPose(SNAP_POSE_DATASET, profile);
+  }, [profile]);
+
+  // User's Signature Poses
+  const signaturePoses = useMemo(() => {
+    return dnaService.getSignaturePoses(SNAP_POSE_DATASET, profile);
+  }, [profile]);
+
+  // Split into left and right columns for true asymmetric masonry
+  const { leftColumn, rightColumn } = useMemo(() => {
+    const left: Array<{ pose: Pose; height: number; index: number }> = [];
+    const right: Array<{ pose: Pose; height: number; index: number }> = [];
+
+    const leftHeights = [
+      COLUMN_WIDTH * 1.56,
+      COLUMN_WIDTH * 1.32,
+      COLUMN_WIDTH * 1.62,
+      COLUMN_WIDTH * 1.40,
+    ];
+    const rightHeights = [
+      COLUMN_WIDTH * 1.34,
+      COLUMN_WIDTH * 1.60,
+      COLUMN_WIDTH * 1.36,
+      COLUMN_WIDTH * 1.52,
+    ];
+
+    filteredPoses.forEach((pose, idx) => {
+      if (idx % 2 === 0) {
+        const height = leftHeights[(idx / 2) % leftHeights.length];
+        left.push({ pose, height, index: idx });
+      } else {
+        const height = rightHeights[Math.floor(idx / 2) % rightHeights.length];
+        right.push({ pose, height, index: idx });
+      }
+    });
+
+    return { leftColumn: left, rightColumn: right };
+  }, [filteredPoses]);
 
   const handleOpenPose = useCallback(
-    (id: string, isFromRec = false) => {
+    (id: string) => {
       recordSignal({
-        type: isFromRec ? 'RECOMMENDATION_CLICKED' : 'POSE_OPENED',
+        type: 'POSE_OPENED',
         poseId: id,
+      });
+      import('@/stores/onboardingChecklistStore').then(({ useOnboardingChecklistStore }) => {
+        useOnboardingChecklistStore.getState().markCompleted('explore_poses');
+      });
+      import('@/services/analytics/PostHogAnalyticsService').then(({ postHogAnalytics }) => {
+        postHogAnalytics.track('pose_selected', { poseId: id });
       });
       router.push({
         pathname: '/pose/[id]',
         params: { id },
-      });
-    },
-    [recordSignal],
-  );
-
-  const handleTryPose = useCallback(
-    (id: string) => {
-      recordSignal({
-        type: 'POSE_USED',
-        poseId: id,
-      });
-      router.push({
-        pathname: '/(tabs)/camera',
-        params: { poseId: id },
       });
     },
     [recordSignal],
@@ -231,11 +249,26 @@ export default function HomeScreen() {
     [isFavorite, toggleFavorite, recordSignal, showToast],
   );
 
+  // Prefetch top poses for instant detail load
+  const handleCategorySelect = useCallback((catId: string) => {
+    setSelectedCategory(catId);
+    const targetPoses = catId === 'all'
+      ? SNAP_POSE_DATASET.slice(0, 8)
+      : SNAP_POSE_DATASET.filter((p) => p.categoryId === catId).slice(0, 8);
+    const urlsToPrefetch = targetPoses
+      .map((p) => p.imageUrl || p.thumbnailUrl)
+      .filter(Boolean);
+    import('@/services/storage/ImageCacheService').then(({ imageCacheService }) => {
+      imageCacheService.prefetchImages(urlsToPrefetch);
+    });
+  }, []);
+
   const isDark = theme.mode === 'dark';
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
+    <View style={[styles.root, { backgroundColor: isDark ? '#141612' : '#F6F1E7' }]}>
       <Animated.ScrollView
+        ref={scrollViewRef}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
@@ -243,243 +276,102 @@ export default function HomeScreen() {
           styles.scrollContent,
           {
             paddingTop: insets.top + Spacing.sm,
-            paddingBottom: insets.bottom + 90,
+            paddingBottom: insets.bottom + 96,
           },
         ]}
       >
-        {/* ── 1. Top Header ────────────────────────────────────────────── */}
-        <Animated.View
-          entering={reduceMotion ? undefined : FadeIn.duration(400)}
-          style={styles.header}
-        >
+        {/* ── 1. Editorial Header (Instant Paint for LCP) ───────────────── */}
+        <View style={styles.header}>
           <View style={styles.headerTitleContainer}>
-            <View style={styles.brandRow}>
-              <View style={styles.logoBadge}>
-                <SPIcon name="camera" size={17} color="#FFFFFF" strokeWidth={2.4} />
-              </View>
-              <Text
-                style={[
-                  styles.brandName,
-                  { color: isDark ? '#FFF' : Colors.textPrimary },
-                ]}
-              >
-                POSEHANUM
-              </Text>
-            </View>
-            <Text style={[styles.subtitle, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
-              Pose Garौँ. Perfect Shot Lिऔँ.
+            <Text
+              style={[
+                styles.screenTitle,
+                { color: isDark ? '#FFFFFF' : '#1C1E1A' },
+              ]}
+            >
+              References
+            </Text>
+            <Text style={[styles.screenSubtitle, { color: isDark ? '#9EA495' : '#6E7465' }]}>
+              Pose Smarter. Capture Better.
             </Text>
           </View>
 
           {/* Quick Header Actions */}
           <View style={styles.headerActions}>
             <AnimatedPressable
-              onPress={() => router.push('/gallery')}
+              onPress={() => router.push('/pose/upload')}
               scaleTo={0.9}
               style={[
                 styles.headerIconButton,
-                { backgroundColor: isDark ? '#242424' : '#EFE9DC' },
+                {
+                  backgroundColor: isDark ? '#222520' : '#EFE9DC',
+                  borderColor: isDark ? '#333630' : '#E3DBD0',
+                },
               ]}
-              accessibilityLabel="View photo gallery"
+              accessibilityLabel="Upload custom pose"
             >
               <SPIcon
-                name="gallery"
+                name="image"
                 size={18}
                 color={isDark ? '#FFF' : Colors.textPrimary}
                 strokeWidth={2}
               />
             </AnimatedPressable>
+
             <AnimatedPressable
-              onPress={() => router.push('/(tabs)/settings')}
+              onPress={() => router.push('/(tabs)/search')}
               scaleTo={0.9}
               style={[
                 styles.headerIconButton,
-                { backgroundColor: isDark ? '#242424' : '#EFE9DC' },
+                {
+                  backgroundColor: isDark ? '#222520' : '#EFE9DC',
+                  borderColor: isDark ? '#333630' : '#E3DBD0',
+                },
               ]}
-              accessibilityLabel="Open settings"
+              accessibilityLabel="Search poses"
             >
               <SPIcon
-                name="settings"
+                name="search"
                 size={18}
                 color={isDark ? '#FFF' : Colors.textPrimary}
                 strokeWidth={2}
               />
             </AnimatedPressable>
           </View>
-        </Animated.View>
-
-        {/* ── 2. Cinematic Hero Section with Scroll Parallax ───────────── */}
-        <Animated.View
-          entering={
-            reduceMotion
-              ? undefined
-              : FadeInDown.duration(600).easing(MotionEasings.outStandard)
-          }
-          style={styles.heroCardContainer}
-        >
-          <View style={styles.heroCard}>
-            {/* Parallax Background image */}
-            <Animated.Image
-              source={{
-                uri: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=900&auto=format&fit=crop&q=80',
-              }}
-              style={[styles.heroBackground, heroParallaxStyle]}
-              resizeMode="cover"
-            />
-            <View style={styles.heroGradientOverlay} />
-
-            {/* Parallax Typography & Action CTAs */}
-            <Animated.View style={[styles.heroContent, heroTextParallaxStyle]}>
-              <Animated.View
-                entering={
-                  reduceMotion
-                    ? undefined
-                    : FadeInDown.duration(400).delay(150).springify()
-                }
-                style={styles.heroTag}
-              >
-                <SPIcon name="sparkles" size={11} color="#FFFFFF" strokeWidth={2.4} />
-                <Text style={styles.heroTagText}>POSE IT. SNAP IT. SHARE IT.</Text>
-              </Animated.View>
-
-              <Animated.Text
-                entering={
-                  reduceMotion
-                    ? undefined
-                    : FadeInDown.duration(450).delay(250).springify()
-                }
-                style={styles.heroTitle}
-              >
-                Ready to pose?
-              </Animated.Text>
-
-              <Animated.Text
-                entering={
-                  reduceMotion
-                    ? undefined
-                    : FadeInDown.duration(450).delay(350).springify()
-                }
-                style={styles.heroSubtitle}
-              >
-                Discover poses that make every shot look effortless with on-device AI guidance.
-              </Animated.Text>
-
-              <View style={styles.heroButtonsRow}>
-                <AnimatedPressable
-                  onPress={() => setSelectedCategory('all')}
-                  scaleTo={0.95}
-                  hapticFeedback="medium"
-                  style={styles.heroPrimaryButton}
-                  accessibilityLabel="Explore Poses"
-                >
-                  <Text style={styles.heroPrimaryButtonText}>EXPLORE POSES →</Text>
-                </AnimatedPressable>
-
-                <AnimatedPressable
-                  onPress={() => router.navigate('/(tabs)/camera')}
-                  scaleTo={0.95}
-                  hapticFeedback="medium"
-                  style={styles.heroSecondaryButton}
-                  accessibilityLabel="Open Camera"
-                >
-                  <SPIcon name="camera" size={15} color="#FFFFFF" strokeWidth={2.2} />
-                  <Text style={styles.heroSecondaryButtonText}>OPEN CAMERA</Text>
-                </AnimatedPressable>
-              </View>
-            </Animated.View>
-          </View>
-        </Animated.View>
-
-        {/* ── 2.5 Quick Feature Action Strip ───────────────────────── */}
-        <View style={styles.quickFeaturesRow}>
-          <AnimatedPressable
-            onPress={() => router.push('/pose/upload')}
-            style={[styles.quickFeatureCard, { backgroundColor: isDark ? '#242424' : '#EFE9DC', borderColor: Colors.olive }]}
-            accessibilityLabel="Upload custom pose from gallery"
-          >
-            <View style={[styles.quickIconCircle, { backgroundColor: `${Colors.olive}20` }]}>
-              <SPIcon name="image" size={18} color={Colors.olive} />
-            </View>
-            <Text style={[styles.quickFeatureTitle, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
-              Upload Pose
-            </Text>
-            <Text style={[styles.quickFeatureSub, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
-              Extract AI Skeleton
-            </Text>
-          </AnimatedPressable>
-
-          <AnimatedPressable
-            onPress={() => router.push('/pose/3d/pose-1')}
-            style={[styles.quickFeatureCard, { backgroundColor: isDark ? '#242424' : '#EFE9DC', borderColor: Colors.oliveDark }]}
-            accessibilityLabel="Open 3D Pose Studio"
-          >
-            <View style={[styles.quickIconCircle, { backgroundColor: `${Colors.oliveDark}20` }]}>
-              <SPIcon name="refresh" size={18} color={Colors.oliveDark} />
-            </View>
-            <Text style={[styles.quickFeatureTitle, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
-              3D Studio
-            </Text>
-            <Text style={[styles.quickFeatureSub, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
-              360° Inspector
-            </Text>
-          </AnimatedPressable>
-
-          <AnimatedPressable
-            onPress={() => router.push('/history')}
-            style={[styles.quickFeatureCard, { backgroundColor: isDark ? '#242424' : '#EFE9DC', borderColor: Colors.darkAccent }]}
-            accessibilityLabel="View my pose attempts and history"
-          >
-            <View style={[styles.quickIconCircle, { backgroundColor: `${Colors.darkAccent}20` }]}>
-              <SPIcon name="camera" size={18} color={Colors.darkAccent} />
-            </View>
-            <Text style={[styles.quickFeatureTitle, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
-              My Attempts
-            </Text>
-            <Text style={[styles.quickFeatureSub, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
-              Match History
-            </Text>
-          </AnimatedPressable>
         </View>
 
-        {/* ── 3. Personalized "Recommended For You" Feed ─────────────── */}
-        {selectedCategory === 'all' && (
-          <Animated.View
-            entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(180)}
-            style={styles.horizontalSection}
-          >
+        {/* ── Onboarding Quick Start Checklist ─────────────────────────── */}
+        <SPOnboardingChecklist />
+
+        {/* ── 2. Interactive T-Pose Studio Hero ────────────────────────── */}
+        <SPTposeHero
+          onExplorePress={() => {
+            scrollViewRef.current?.scrollTo({ y: 580, animated: true });
+          }}
+        />
+
+        {/* ── 3. Contextual Shot Builder ───────────────────────────────── */}
+        <SPShotBuilder />
+
+        {/* ── 4. Personalized AI Discovery ("For Your Style") ─────────── */}
+        {selectedCategory === 'all' && personalizedRecommendations.length > 0 && (
+          <View style={styles.sectionContainer}>
             <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionTitleWithIcon}>
-                <SPIcon name="ai" size={19} color={Colors.olive} strokeWidth={2.2} />
-                <Text
-                  style={[
-                    styles.sectionTitle,
-                    { color: isDark ? '#FFF' : Colors.textPrimary },
-                  ]}
-                >
-                  {isPersonalizationEnabled ? 'Recommended for You' : 'Popular Poses'}
-                </Text>
+              <Text style={[styles.sectionTitle, { color: isDark ? '#FFF' : '#1C1E1A' }]}>
+                For Your Style
+              </Text>
+              <View style={styles.aiPillBadge}>
+                <Text style={styles.aiPillBadgeText}>AI CURATED</Text>
               </View>
-              {isPersonalizationEnabled && (
-                <View style={styles.aiBadgePill}>
-                  <Text style={styles.aiBadgePillText}>ON-DEVICE AI</Text>
-                </View>
-              )}
             </View>
 
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalCardScroll}
-              decelerationRate="fast"
+              contentContainerStyle={styles.horizontalScroll}
             >
               {personalizedRecommendations.map((rec) => (
-                <View key={`rec-${rec.pose.id}`} style={{ width: 185, marginRight: 14 }}>
-                  {/* Human-Readable Explanation Tag */}
-                  <View style={styles.explanationBadge}>
-                    <Text style={styles.explanationText} numberOfLines={1}>
-                      {rec.explanation}
-                    </Text>
-                  </View>
+                <View key={`rec-${rec.pose.id}`} style={{ width: 155, marginRight: 12 }}>
                   <SPPoseCard
                     id={rec.pose.id}
                     name={rec.pose.title}
@@ -487,39 +379,143 @@ export default function HomeScreen() {
                     imageUri={rec.pose.imageUrl}
                     difficulty={rec.pose.difficulty}
                     isFavorite={isFavorite(rec.pose.id)}
-                    width={185}
-                    height={235}
-                    onPress={(id) => handleOpenPose(id, true)}
+                    width={155}
+                    height={200}
+                    variant="editorial"
+                    onPress={(id) => handleOpenPose(id)}
                     onFavoritePress={handleToggleFavorite}
-                    onCameraPress={handleTryPose}
                   />
                 </View>
               ))}
             </ScrollView>
-          </Animated.View>
+          </View>
         )}
 
-        {/* ── 4. Category Filter Chips ─────────────────────────────────── */}
-        <Animated.View
-          entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(220)}
-          style={[styles.categoriesSection, { marginTop: Spacing.md }]}
-        >
-          <View style={styles.sectionHeaderRow}>
-            <Text
-              style={[
-                styles.sectionTitle,
-                { color: isDark ? '#FFF' : Colors.textPrimary },
-              ]}
-            >
-              Categories
-            </Text>
-            <Pressable onPress={() => router.push('/(tabs)/search')}>
-              <Text style={[styles.seeAllText, { color: Colors.olive }]}>
-                Search all →
+        {/* ── 5. Signature Poses ───────────────────────────────────────── */}
+        {selectedCategory === 'all' && (
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: isDark ? '#FFF' : '#1C1E1A' }]}>
+                My Signature Poses
               </Text>
-            </Pressable>
-          </View>
+              <Text style={[styles.sectionSub, { color: isDark ? '#D1D1D6' : '#6E7465' }]}>
+                Based on your high scores
+              </Text>
+            </View>
 
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalScroll}
+            >
+              {signaturePoses.map((pose) => (
+                <View key={`sig-${pose.id}`} style={{ width: 150, marginRight: 12 }}>
+                  <SPPoseCard
+                    id={pose.id}
+                    name={pose.title}
+                    category={pose.category ?? pose.categoryId}
+                    imageUri={pose.imageUrl}
+                    difficulty={pose.difficulty}
+                    isFavorite={isFavorite(pose.id)}
+                    width={150}
+                    height={195}
+                    variant="editorial"
+                    onPress={(id) => handleOpenPose(id)}
+                    onFavoritePress={handleToggleFavorite}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ── ADDITIVE: Daily Challenge & Streak Banner ─────────────────── */}
+        {selectedCategory === 'all' && (
+          <View style={styles.sectionContainer}>
+            <View style={styles.challengeCard}>
+              <View style={styles.challengeHeader}>
+                <View style={styles.challengeBadge}>
+                  <SPIcon name="flame" size={14} color="#FFF" />
+                  <Text style={styles.challengeBadgeText}>DAILY CHALLENGE</Text>
+                </View>
+                <Text style={styles.xpRewardText}>+200 XP</Text>
+              </View>
+              <Text style={styles.challengeTitle}>Nail Today's Featured Frame</Text>
+              <Text style={styles.challengeSub}>
+                Achieve ≥85% match precision on the daily pose to level up your Director profile.
+              </Text>
+              <AnimatedPressable
+                onPress={() => router.push('/(tabs)/camera')}
+                style={styles.challengeBtn}
+              >
+                <Text style={styles.challengeBtnText}>Start Challenge →</Text>
+              </AnimatedPressable>
+            </View>
+          </View>
+        )}
+
+        {/* ── ADDITIVE: 5-Shot Pose Journey Banner ──────────────────────── */}
+        {selectedCategory === 'all' && (
+          <View style={styles.sectionContainer}>
+            <AnimatedPressable
+              onPress={() => router.push('/journey')}
+              style={styles.journeyBanner}
+            >
+              <View style={styles.journeyLeft}>
+                <Text style={styles.journeyTag}>NEW FEATURE</Text>
+                <Text style={styles.journeyTitle}>5-Shot Pose Journey</Text>
+                <Text style={styles.journeySub}>Shoot an entire editorial story in 5 guided steps.</Text>
+              </View>
+              <View style={styles.journeyIconCircle}>
+                <SPIcon name="play" size={20} color="#FFF" />
+              </View>
+            </AnimatedPressable>
+          </View>
+        )}
+
+        {/* ── ADDITIVE: Creative Templates & Remix ──────────────────────── */}
+        {selectedCategory === 'all' && (
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: isDark ? '#FFF' : '#1C1E1A' }]}>
+                Creative Templates
+              </Text>
+              <AnimatedPressable onPress={() => router.push('/template-creator')}>
+                <Text style={[styles.sectionSub, { color: Colors.olive }]}>
+                  + Create New
+                </Text>
+              </AnimatedPressable>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalScroll}
+            >
+              {TEMPLATE_DATASET.slice(0, 6).map((tpl) => (
+                <AnimatedPressable
+                  key={tpl.id}
+                  onPress={() => router.push({ pathname: '/template/[id]', params: { id: tpl.id } })}
+                  style={styles.templateCard}
+                >
+                  <Image source={{ uri: tpl.imageUrl }} style={styles.templateImage} />
+                  <View style={styles.templateOverlay} />
+                  <View style={styles.templateMeta}>
+                    <Text style={styles.templateCategory}>{tpl.category.toUpperCase()}</Text>
+                    <Text style={styles.templateTitle} numberOfLines={2}>{tpl.title}</Text>
+                    <Text style={styles.templateUses}>⚡ {tpl.uses.toLocaleString()} uses</Text>
+                  </View>
+                </AnimatedPressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ── 6. Category Filter Chips ─────────────────────────────────── */}
+        <View style={styles.categoriesSection}>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#FFF' : '#1C1E1A', marginBottom: 8 }]}>
+            Explore Categories
+          </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -532,7 +528,7 @@ export default function HomeScreen() {
                 name={cat.name}
                 isSelected={selectedCategory === cat.id}
                 onSelect={(id) => {
-                  setSelectedCategory(id);
+                  handleCategorySelect(id);
                   recordSignal({
                     type: 'CATEGORY_OPENED',
                     categoryId: id,
@@ -541,38 +537,41 @@ export default function HomeScreen() {
               />
             ))}
           </ScrollView>
-        </Animated.View>
+        </View>
 
-        {/* ── 5. Main Poses Grid (Category filtered or Featured) ──────── */}
-        <View style={styles.posesSection}>
-          <View style={styles.sectionHeaderRow}>
-            <Text
-              style={[
-                styles.sectionTitle,
-                { color: isDark ? '#FFF' : Colors.textPrimary },
-              ]}
+        {/* ── 7. Try Something New Callout ─────────────────────────────── */}
+        {selectedCategory === 'all' && trySomethingNewRec && (
+          <View style={styles.tryNewCard}>
+            <View style={styles.tryNewHeader}>
+              <SPIcon name="sparkles" size={16} color="#B7FF00" />
+              <Text style={styles.tryNewTag}>TRY SOMETHING NEW</Text>
+            </View>
+            <Text style={styles.tryNewText}>{trySomethingNewRec.explanation}</Text>
+            <AnimatedPressable
+              onPress={() => handleOpenPose(trySomethingNewRec.pose.id)}
+              style={styles.tryNewButton}
+              scaleTo={0.95}
             >
-              {selectedCategory === 'all'
-                ? 'Curated Collection'
-                : `${SNAP_POSE_CATEGORIES.find((c) => c.id === selectedCategory)?.name ?? ''} Poses`}
-            </Text>
-            <Text style={[styles.poseCountBadge, { color: isDark ? '#AAA' : Colors.textSecondary }]}>
-              {filteredPoses.length} {filteredPoses.length === 1 ? 'idea' : 'ideas'}
-            </Text>
+              <Text style={styles.tryNewButtonText}>VIEW EXPLORATION POSE →</Text>
+            </AnimatedPressable>
           </View>
+        )}
 
-          <View style={styles.posesGrid}>
-            {filteredPoses.map((pose, index) => (
+        {/* ── 8. True Asymmetric 2-Column Masonry Grid ─────────────────── */}
+        <View style={styles.masonryContainer}>
+          {/* Left Column */}
+          <View style={styles.column}>
+            {leftColumn.map(({ pose, height, index }) => (
               <Animated.View
                 key={pose.id}
                 entering={
                   reduceMotion
                     ? undefined
                     : FadeInDown.duration(380)
-                        .delay(Math.min(index * 40, 400))
+                        .delay(Math.min(index * 30, 240))
                         .springify()
                 }
-                style={{ width: CARD_WIDTH }}
+                style={{ marginBottom: COLUMN_GAP }}
               >
                 <SPPoseCard
                   id={pose.id}
@@ -581,109 +580,47 @@ export default function HomeScreen() {
                   imageUri={pose.imageUrl}
                   difficulty={pose.difficulty}
                   isFavorite={isFavorite(pose.id)}
-                  width={CARD_WIDTH}
-                  height={CARD_WIDTH * 1.35}
-                  onPress={(id) => handleOpenPose(id, false)}
+                  width={COLUMN_WIDTH}
+                  height={height}
+                  variant="editorial"
+                  onPress={(id) => handleOpenPose(id)}
                   onFavoritePress={handleToggleFavorite}
-                  onCameraPress={handleTryPose}
+                />
+              </Animated.View>
+            ))}
+          </View>
+
+          {/* Right Column */}
+          <View style={styles.column}>
+            {rightColumn.map(({ pose, height, index }) => (
+              <Animated.View
+                key={pose.id}
+                entering={
+                  reduceMotion
+                    ? undefined
+                    : FadeInDown.duration(380)
+                        .delay(Math.min(index * 30, 240))
+                        .springify()
+                }
+                style={{ marginBottom: COLUMN_GAP }}
+              >
+                <SPPoseCard
+                  id={pose.id}
+                  name={pose.title}
+                  category={pose.category ?? pose.categoryId}
+                  imageUri={pose.imageUrl}
+                  difficulty={pose.difficulty}
+                  isFavorite={isFavorite(pose.id)}
+                  width={COLUMN_WIDTH}
+                  height={height}
+                  variant="editorial"
+                  onPress={(id) => handleOpenPose(id)}
+                  onFavoritePress={handleToggleFavorite}
                 />
               </Animated.View>
             ))}
           </View>
         </View>
-
-        {/* ── 6. Trending Section with Center-Scale Carousel ─────────── */}
-        {selectedCategory === 'all' && (
-          <Animated.View
-            entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(250)}
-            style={styles.horizontalSection}
-          >
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionTitleWithIcon}>
-                <SPIcon name="trending" size={19} color={Colors.error} strokeWidth={2.2} />
-                <Text
-                  style={[
-                    styles.sectionTitle,
-                    { color: isDark ? '#FFF' : Colors.textPrimary },
-                  ]}
-                >
-                  Trending Now
-                </Text>
-              </View>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalCardScroll}
-              decelerationRate="fast"
-            >
-              {trendingPoses.map((pose) => (
-                <View key={`trend-${pose.id}`} style={{ width: 175, marginRight: 14 }}>
-                  <SPPoseCard
-                    id={pose.id}
-                    name={pose.title}
-                    category={pose.category ?? pose.categoryId}
-                    imageUri={pose.imageUrl}
-                    difficulty={pose.difficulty}
-                    isFavorite={isFavorite(pose.id)}
-                    width={175}
-                    height={230}
-                    onPress={(id) => handleOpenPose(id, false)}
-                    onFavoritePress={handleToggleFavorite}
-                    onCameraPress={handleTryPose}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-          </Animated.View>
-        )}
-
-        {/* ── 7. Editor's Selection Section ────────────────────────────── */}
-        {selectedCategory === 'all' && (
-          <Animated.View
-            entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(300)}
-            style={[styles.horizontalSection, { marginTop: Spacing.xl }]}
-          >
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionTitleWithIcon}>
-                <SPIcon name="editors" size={19} color={Colors.warning} strokeWidth={2.2} />
-                <Text
-                  style={[
-                    styles.sectionTitle,
-                    { color: isDark ? '#FFF' : Colors.textPrimary },
-                  ]}
-                >
-                  Editor's Selection
-                </Text>
-              </View>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalCardScroll}
-            >
-              {editorsPicks.map((pose) => (
-                <View key={`edit-${pose.id}`} style={{ width: 175, marginRight: 14 }}>
-                  <SPPoseCard
-                    id={pose.id}
-                    name={pose.title}
-                    category={pose.category ?? pose.categoryId}
-                    imageUri={pose.imageUrl}
-                    difficulty={pose.difficulty}
-                    isFavorite={isFavorite(pose.id)}
-                    width={175}
-                    height={230}
-                    onPress={(id) => handleOpenPose(id, false)}
-                    onFavoritePress={handleToggleFavorite}
-                    onCameraPress={handleTryPose}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-          </Animated.View>
-        )}
       </Animated.ScrollView>
 
       <SPToast {...toastProps} />
@@ -708,33 +645,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: Spacing.md,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.sm + 2,
   },
   headerTitleContainer: {
     flex: 1,
   },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  screenTitle: {
+    fontSize: 34,
+    fontWeight: '700',
+    letterSpacing: -0.6,
+    ...Platform.select({
+      ios: { fontFamily: 'Georgia' },
+      android: { fontFamily: 'serif' },
+      default: { fontFamily: 'serif' },
+    }),
   },
-  logoBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: Colors.olive,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandName: {
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-  },
-  subtitle: {
+  screenSubtitle: {
     fontSize: 13,
     fontWeight: '500',
     marginTop: 2,
+    letterSpacing: 0.2,
   },
   headerActions: {
     flexDirection: 'row',
@@ -742,234 +673,269 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerIconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  // Hero Card
-  heroCardContainer: {
-    marginBottom: Spacing.lg,
-  },
-  heroCard: {
-    borderRadius: BorderRadius.card,
-    overflow: 'hidden',
-    position: 'relative',
-    height: 235,
-    justifyContent: 'flex-end',
-    backgroundColor: '#1E2019',
-    shadowColor: Colors.dark,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  heroBackground: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  heroGradientOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(18, 19, 14, 0.62)',
-  },
-  heroContent: {
-    padding: Spacing.md,
-    zIndex: 2,
-  },
-  heroTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    marginBottom: 6,
-  },
-  heroTagText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  heroTitle: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 4,
-    letterSpacing: -0.3,
-  },
-  heroSubtitle: {
-    color: 'rgba(255, 255, 255, 0.85)',
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: Spacing.sm,
-    maxWidth: '92%',
-  },
-  heroButtonsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  heroPrimaryButton: {
-    backgroundColor: Colors.olive,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: BorderRadius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: Colors.olive,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  heroPrimaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  heroSecondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: BorderRadius.sm,
-  },
-  heroSecondaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-
-  // Categories
-  categoriesSection: {
-    marginBottom: Spacing.lg,
+  // Sections
+  sectionContainer: {
+    marginBottom: Spacing.xxl,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: Spacing.xs,
+    marginBottom: Spacing.sm,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: -0.2,
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
-  seeAllText: {
-    fontSize: 13,
+  sectionSub: {
+    fontSize: 12,
     fontWeight: '600',
+    letterSpacing: 0.2,
   },
-  categoryScroll: {
-    paddingVertical: 6,
-    gap: 8,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  chipLabel: {
-    fontSize: 12,
-  },
-
-  // Poses Section
-  posesSection: {
-    marginBottom: Spacing.xl,
-  },
-  poseCountBadge: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  posesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: CARD_GAP,
-    marginTop: Spacing.xs,
-  },
-
-  // Horizontal Carousels
-  horizontalSection: {
-    marginBottom: Spacing.md,
-  },
-  sectionTitleWithIcon: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  aiBadgePill: {
-    backgroundColor: 'rgba(101, 116, 74, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  aiPillBadge: {
+    backgroundColor: 'rgba(101, 116, 74, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(101, 116, 74, 0.4)',
   },
-  aiBadgePillText: {
+  aiPillBadgeText: {
     color: Colors.olive,
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.8,
   },
-  explanationBadge: {
-    backgroundColor: 'rgba(101, 116, 74, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginBottom: 6,
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
-  },
-  explanationText: {
-    color: Colors.olive,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  horizontalCardScroll: {
+  horizontalScroll: {
     paddingVertical: 6,
   },
-  quickFeaturesRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
+
+  // Categories
+  categoriesSection: {
+    marginBottom: Spacing.xxl,
   },
-  quickFeatureCard: {
-    flex: 1,
-    padding: Spacing.sm + 2,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
+  categoryScroll: {
+    paddingVertical: 6,
+    gap: 10,
+  },
+  chip: {
+    minHeight: 44,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quickIconCircle: {
-    width: 36,
-    height: 36,
+  chipLabel: {
+    fontSize: 14,
+    letterSpacing: 0.3,
+  },
+
+  // Try New Card
+  tryNewCard: {
+    backgroundColor: '#1E231B',
+    padding: Spacing.md,
     borderRadius: 18,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(183, 255, 0, 0.25)',
+  },
+  tryNewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  tryNewTag: {
+    color: '#B7FF00',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  tryNewText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 10,
+    lineHeight: 17,
+  },
+  tryNewButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  tryNewButtonText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  // Masonry Grid
+  masonryContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  column: {
+    width: COLUMN_WIDTH,
+  },
+
+  // Daily Challenge
+  challengeCard: {
+    backgroundColor: '#20241A',
+    borderRadius: BorderRadius.card,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(183,255,0,0.25)',
+  },
+  challengeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  challengeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.olive,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  challengeBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: 1,
+  },
+  xpRewardText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.lime,
+  },
+  challengeTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  challengeSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    lineHeight: 16,
+    marginBottom: 10,
+  },
+  challengeBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.lime,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  challengeBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#181818',
+  },
+
+  // Journey Banner
+  journeyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.forest,
+    borderRadius: BorderRadius.card,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  journeyLeft: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  journeyTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: Colors.lime,
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  journeyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFF',
+    marginBottom: 2,
+  },
+  journeySub: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.75)',
+    lineHeight: 15,
+  },
+  journeyIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing.xs,
   },
-  quickFeatureTitle: {
-    fontSize: Typography.sizes.caption,
-    fontWeight: Typography.weights.bold,
-    textAlign: 'center',
+
+  // Templates
+  templateCard: {
+    width: 160,
+    height: 210,
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+    marginRight: 12,
+    position: 'relative',
+    backgroundColor: '#222',
   },
-  quickFeatureSub: {
-    fontSize: Typography.sizes.caption - 3,
-    fontWeight: Typography.weights.medium,
-    marginTop: 1,
-    textAlign: 'center',
+  templateImage: {
+    width: '100%',
+    height: '100%',
+  },
+  templateOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  templateMeta: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    right: 10,
+  },
+  templateCategory: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: Colors.lime,
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  templateTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFF',
+    lineHeight: 17,
+    marginBottom: 4,
+  },
+  templateUses: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '600',
   },
 });

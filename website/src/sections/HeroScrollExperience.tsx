@@ -21,6 +21,10 @@ export function HeroScrollExperience() {
   });
 
   // Derived animation states based on scroll progress (0.0 to 1.0)
+  const heroBackgroundBlur = useTransform(smoothProgress, [0, 0.14], ['blur(20px)', 'blur(0px)']);
+  const heroBlurLayerOpacity = useTransform(smoothProgress, [0, 0.12, 0.16], [1, 0.5, 0]);
+  const heroBackdropShade = useTransform(smoothProgress, [0, 0.14], ['rgba(10, 14, 12, 0.7)', 'rgba(10, 14, 12, 0)']);
+
   const imageOpacity = useTransform(smoothProgress, [0.04, 0.18], [0.1, 1]);
   const cameraFrameScale = useTransform(smoothProgress, [0.12, 0.28], [0.88, 1]);
   const overlayOpacity = useTransform(smoothProgress, [0.24, 0.38], [0, 0.85]);
@@ -60,6 +64,17 @@ export function HeroScrollExperience() {
         {/* Ambient Parallax Particles / Glows */}
         <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/10 rounded-full blur-[128px] pointer-events-none" />
         <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-cyanAccent/10 rounded-full blur-[128px] pointer-events-none" />
+
+        {/* Dynamic Frosted Background Blur Overlay (Active at Top, Clears on Scroll) */}
+        <motion.div
+          style={{
+            opacity: heroBlurLayerOpacity,
+            backdropFilter: heroBackgroundBlur,
+            WebkitBackdropFilter: heroBackgroundBlur,
+            backgroundColor: heroBackdropShade,
+          }}
+          className="absolute inset-0 z-25 pointer-events-none transition-all"
+        />
 
         {/* Top Hero Copy */}
         <motion.div
@@ -110,6 +125,7 @@ export function HeroScrollExperience() {
             style={{
               opacity: imageOpacity,
               scale: shouldReduceMotion ? 1 : finalPhotoScale,
+              filter: heroBackgroundBlur,
             }}
             className="absolute inset-0 z-0"
           >

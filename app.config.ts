@@ -43,6 +43,7 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> => 
       'android.permission.CAMERA',
       'android.permission.READ_MEDIA_IMAGES',
       'android.permission.READ_MEDIA_VIDEO',
+      'android.permission.READ_MEDIA_AUDIO',
       'android.permission.READ_EXTERNAL_STORAGE',
       'android.permission.WRITE_EXTERNAL_STORAGE',
       'android.permission.RECORD_AUDIO',
@@ -77,6 +78,8 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> => 
           'Allow Snap Pose to save captured photos to your photo library.',
         savePhotosPermission:
           'Allow Snap Pose to save captured photos to your photo library.',
+        audioPermission:
+          'Allow Snap Pose to access audio.',
         isAccessMediaLocationEnabled: true,
       },
     ],

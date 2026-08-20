@@ -121,7 +121,7 @@ export class NotificationIntelligenceEngine {
 
       // Inactivity urgency boost for comeback
       if (msg.category === 'COMEBACK') {
-        score += Math.min(40, inactivityDays * 10);
+        score += 25 + Math.min(50, inactivityDays * 10);
       }
 
       // High score relevance boost

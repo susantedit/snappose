@@ -45,6 +45,7 @@ import { MotionEasings, useReducedMotion } from '@/constants/motion';
 import { useFavorites } from '@/features/favorites/hooks/useFavorites';
 import { usePersonalizationStore } from '@/stores/personalizationStore';
 import { SNAP_POSE_CATEGORIES, SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
+import { saveImageToGallery } from '@/utils/saveImage';
 import type { ScoredRecommendation } from '@/features/personalization';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -179,8 +180,29 @@ export default function HomeScreen() {
     );
   }, [getRecommendedPoses, selectedCategory, outfitPreference]);
 
-  const trendingPoses = useMemo(() => SNAP_POSE_DATASET.slice(0, 6), []);
-  const editorsPicks = useMemo(() => SNAP_POSE_DATASET.slice(6, 12), []);
+  const trendingPoses = useMemo(() => {
+    return [
+      ...SNAP_POSE_DATASET.filter((p) => p.tags.includes('trending') || p.id.includes('drive') || p.id === 'pose-tony-stark-tpose'),
+      ...SNAP_POSE_DATASET,
+    ].filter((p, index, self) => self.findIndex((s) => s.id === p.id) === index).slice(0, 14);
+  }, []);
+
+  const editorsPicks = useMemo(() => SNAP_POSE_DATASET.slice(14, 26), []);
+
+  const handleDownloadHeroCover = useCallback(async () => {
+    showToast({
+      message: 'Saving cover photo to gallery...',
+      variant: 'info',
+    });
+    const result = await saveImageToGallery(
+      'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=900&auto=format&fit=crop&q=80',
+      'snappose_hero_cover'
+    );
+    showToast({
+      message: result.message,
+      variant: result.success ? 'success' : 'error',
+    });
+  }, [showToast]);
 
   const handleOpenPose = useCallback(
     (id: string, isFromRec = false) => {
@@ -384,15 +406,119 @@ export default function HomeScreen() {
                   <SPIcon name="camera" size={15} color="#FFFFFF" strokeWidth={2.2} />
                   <Text style={styles.heroSecondaryButtonText}>OPEN CAMERA</Text>
                 </AnimatedPressable>
+
+                <AnimatedPressable
+                  onPress={handleDownloadHeroCover}
+                  scaleTo={0.95}
+                  hapticFeedback="light"
+                  style={styles.heroDownloadIconButton}
+                  accessibilityLabel="Save cover photo to gallery"
+                >
+                  <SPIcon name="download" size={15} color="#FFFFFF" strokeWidth={2.2} />
+                </AnimatedPressable>
               </View>
             </Animated.View>
           </View>
         </Animated.View>
 
-        {/* ── 3. Personalized "Recommended For You" Feed ─────────────── */}
+        {/* ── 3. 🔥 TOP TRENDING POSES SECTION ──────────────────────── */}
         {selectedCategory === 'all' && (
           <Animated.View
-            entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(180)}
+            entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(150)}
+            style={[styles.horizontalSection, { marginTop: Spacing.md }]}
+          >
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionTitleWithIcon}>
+                <SPIcon name="trending" size={20} color={Colors.error} strokeWidth={2.4} />
+                <Text
+                  style={[
+                    styles.sectionTitle,
+                    { color: isDark ? '#FFF' : Colors.textPrimary },
+                  ]}
+                >
+                  🔥 Trending Poses
+                </Text>
+              </View>
+              <View style={styles.trendingBadgePill}>
+                <Text style={styles.trendingBadgePillText}>HOT TODAY</Text>
+              </View>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalCardScroll}
+              decelerationRate="fast"
+            >
+              {trendingPoses.map((pose) => (
+                <View key={`trend-${pose.id}`} style={{ width: 175, marginRight: 14 }}>
+                  <SPPoseCard
+                    id={pose.id}
+                    name={pose.title}
+                    category={pose.category ?? pose.categoryId}
+                    imageUri={pose.imageUrl}
+                    difficulty={pose.difficulty}
+                    isFavorite={isFavorite(pose.id)}
+                    width={175}
+                    height={230}
+                    onPress={(id) => handleOpenPose(id, false)}
+                    onFavoritePress={handleToggleFavorite}
+                    onCameraPress={handleTryPose}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </Animated.View>
+        )}
+
+        {/* ── 4. Category Filter Chips ─────────────────────────────────── */}
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(200)}
+          style={[styles.categoriesSection, { marginTop: Spacing.lg }]}
+        >
+          <View style={styles.sectionHeaderRow}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: isDark ? '#FFF' : Colors.textPrimary },
+              ]}
+            >
+              Categories
+            </Text>
+            <Pressable onPress={() => router.push('/(tabs)/search')}>
+              <Text style={[styles.seeAllText, { color: Colors.olive }]}>
+                Search all →
+              </Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryScroll}
+          >
+            {SNAP_POSE_CATEGORIES.map((cat) => (
+              <CategoryChip
+                key={cat.id}
+                id={cat.id}
+                name={cat.name}
+                isSelected={selectedCategory === cat.id}
+                onSelect={(id) => {
+                  setSelectedCategory(id);
+                  recordSignal({
+                    type: 'CATEGORY_OPENED',
+                    categoryId: id,
+                  });
+                }}
+              />
+            ))}
+          </ScrollView>
+        </Animated.View>
+
+        {/* ── 5. Personalized "Recommended For You" Feed ─────────────── */}
+        {selectedCategory === 'all' && (
+          <Animated.View
+            entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(220)}
             style={styles.horizontalSection}
           >
             <View style={styles.sectionHeaderRow}>
@@ -447,51 +573,7 @@ export default function HomeScreen() {
           </Animated.View>
         )}
 
-        {/* ── 4. Category Filter Chips ─────────────────────────────────── */}
-        <Animated.View
-          entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(220)}
-          style={[styles.categoriesSection, { marginTop: Spacing.md }]}
-        >
-          <View style={styles.sectionHeaderRow}>
-            <Text
-              style={[
-                styles.sectionTitle,
-                { color: isDark ? '#FFF' : Colors.textPrimary },
-              ]}
-            >
-              Categories
-            </Text>
-            <Pressable onPress={() => router.push('/(tabs)/search')}>
-              <Text style={[styles.seeAllText, { color: Colors.olive }]}>
-                Search all →
-              </Text>
-            </Pressable>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoryScroll}
-          >
-            {SNAP_POSE_CATEGORIES.map((cat) => (
-              <CategoryChip
-                key={cat.id}
-                id={cat.id}
-                name={cat.name}
-                isSelected={selectedCategory === cat.id}
-                onSelect={(id) => {
-                  setSelectedCategory(id);
-                  recordSignal({
-                    type: 'CATEGORY_OPENED',
-                    categoryId: id,
-                  });
-                }}
-              />
-            ))}
-          </ScrollView>
-        </Animated.View>
-
-        {/* ── 5. Main Poses Grid (Category filtered or Featured) ──────── */}
+        {/* ── 6. Main Poses Grid (Category filtered or Curated Collection) ── */}
         <View style={styles.posesSection}>
           <View style={styles.sectionHeaderRow}>
             <Text
@@ -539,53 +621,6 @@ export default function HomeScreen() {
             ))}
           </View>
         </View>
-
-        {/* ── 6. Trending Section with Center-Scale Carousel ─────────── */}
-        {selectedCategory === 'all' && (
-          <Animated.View
-            entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(250)}
-            style={styles.horizontalSection}
-          >
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionTitleWithIcon}>
-                <SPIcon name="trending" size={19} color={Colors.error} strokeWidth={2.2} />
-                <Text
-                  style={[
-                    styles.sectionTitle,
-                    { color: isDark ? '#FFF' : Colors.textPrimary },
-                  ]}
-                >
-                  Trending Now
-                </Text>
-              </View>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalCardScroll}
-              decelerationRate="fast"
-            >
-              {trendingPoses.map((pose) => (
-                <View key={`trend-${pose.id}`} style={{ width: 175, marginRight: 14 }}>
-                  <SPPoseCard
-                    id={pose.id}
-                    name={pose.title}
-                    category={pose.category ?? pose.categoryId}
-                    imageUri={pose.imageUrl}
-                    difficulty={pose.difficulty}
-                    isFavorite={isFavorite(pose.id)}
-                    width={175}
-                    height={230}
-                    onPress={(id) => handleOpenPose(id, false)}
-                    onFavoritePress={handleToggleFavorite}
-                    onCameraPress={handleTryPose}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-          </Animated.View>
-        )}
 
         {/* ── 7. Editor's Selection Section ────────────────────────────── */}
         {selectedCategory === 'all' && (
@@ -797,6 +832,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
+  heroDownloadIconButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    width: 34,
+    height: 34,
+    borderRadius: BorderRadius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   // Categories
   categoriesSection: {
@@ -857,6 +900,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  trendingBadgePill: {
+    backgroundColor: 'rgba(255, 75, 75, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  trendingBadgePillText: {
+    color: Colors.error,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
   aiBadgePill: {
     backgroundColor: 'rgba(101, 116, 74, 0.15)',

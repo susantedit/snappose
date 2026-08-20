@@ -13,12 +13,6 @@ export const CREATOR_SOCIAL_LINKS: SocialLink[] = [
     icon: 'github',
   },
   {
-    id: 'youtube',
-    name: 'YouTube',
-    url: 'https://www.youtube.com/@developersusant',
-    icon: 'youtube',
-  },
-  {
     id: 'instagram',
     name: 'Instagram',
     url: 'https://instagram.com/susantgamerz',

@@ -90,7 +90,7 @@ const PAGES: PageData[] = [
 
 function completeOnboarding(): void {
   mmkv.set(MMKV_KEYS.ONBOARDING_COMPLETED, true);
-  router.replace('/(tabs)');
+  router.replace('/(auth)/sign-in');
 }
 
 function OnboardingPage({
@@ -345,7 +345,7 @@ export default function OnboardingScreen() {
       {/* Top Header Bar */}
       <View style={styles.headerRow}>
         <View style={styles.brandBadge}>
-          <Text style={styles.brandBadgeText}>SNAP POSE</Text>
+          <Text style={styles.brandBadgeText}>POSEHANUM</Text>
         </View>
 
         {showSkip ? (

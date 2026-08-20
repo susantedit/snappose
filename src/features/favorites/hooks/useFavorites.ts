@@ -66,6 +66,12 @@ async function addFavorite(pose: Pose): Promise<void> {
   if (!exists) {
     const updated = [pose, ...current];
     saveFavoritesToStorage(updated);
+    import('@/stores/onboardingChecklistStore').then(({ useOnboardingChecklistStore }) => {
+      useOnboardingChecklistStore.getState().markCompleted('save_favorite');
+    });
+    import('@/services/analytics/PostHogAnalyticsService').then(({ postHogAnalytics }) => {
+      postHogAnalytics.track('favorite_added', { poseId: pose.id, category: pose.categoryId });
+    });
   }
 }
 
@@ -87,6 +93,12 @@ async function toggleFavorite(pose: Pose): Promise<{ added: boolean }> {
     // Add
     current.unshift(pose);
     saveFavoritesToStorage(current);
+    import('@/stores/onboardingChecklistStore').then(({ useOnboardingChecklistStore }) => {
+      useOnboardingChecklistStore.getState().markCompleted('save_favorite');
+    });
+    import('@/services/analytics/PostHogAnalyticsService').then(({ postHogAnalytics }) => {
+      postHogAnalytics.track('favorite_added', { poseId: pose.id, category: pose.categoryId });
+    });
     return { added: true };
   }
 }
@@ -129,21 +141,60 @@ export function useFavorites(sortMode: SortMode = 'newest') {
 
   const addMutation = useMutation({
     mutationFn: addFavorite,
-    onSuccess: () => {
+    onMutate: async (newPose: Pose) => {
+      await queryClient.cancelQueries({ queryKey: ['favorites'] });
+      const previous = queryClient.getQueryData<Pose[]>(['favorites']) || [];
+      const updated = [newPose, ...previous.filter((p) => p.id !== newPose.id)];
+      queryClient.setQueryData<Pose[]>(['favorites'], updated);
+      return { previous };
+    },
+    onError: (_err, _newPose, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<Pose[]>(['favorites'], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['favorites'] });
     },
   });
 
   const removeMutation = useMutation({
     mutationFn: removeFavorite,
-    onSuccess: () => {
+    onMutate: async (poseId: string) => {
+      await queryClient.cancelQueries({ queryKey: ['favorites'] });
+      const previous = queryClient.getQueryData<Pose[]>(['favorites']) || [];
+      const updated = previous.filter((p) => p.id !== poseId);
+      queryClient.setQueryData<Pose[]>(['favorites'], updated);
+      return { previous };
+    },
+    onError: (_err, _poseId, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<Pose[]>(['favorites'], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['favorites'] });
     },
   });
 
   const toggleMutation = useMutation({
     mutationFn: toggleFavorite,
-    onSuccess: () => {
+    onMutate: async (targetPose: Pose) => {
+      await queryClient.cancelQueries({ queryKey: ['favorites'] });
+      const previous = queryClient.getQueryData<Pose[]>(['favorites']) || [];
+      const exists = previous.some((p) => p.id === targetPose.id);
+      const updated = exists
+        ? previous.filter((p) => p.id !== targetPose.id)
+        : [targetPose, ...previous];
+      queryClient.setQueryData<Pose[]>(['favorites'], updated);
+      return { previous };
+    },
+    onError: (_err, _targetPose, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData<Pose[]>(['favorites'], context.previous);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['favorites'] });
     },
   });

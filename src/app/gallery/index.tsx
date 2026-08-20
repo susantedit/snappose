@@ -14,10 +14,12 @@
 
 import React, {
   useCallback,
+  useEffect,
   useState,
 } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
   Modal,
   Pressable,
@@ -111,7 +113,18 @@ function useGalleryPhotos() {
     setLoading(true);
     setError(null);
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      let status = 'denied';
+      try {
+        const res = await MediaLibrary.requestPermissionsAsync(false, ['photo']);
+        status = res.status;
+      } catch (permError) {
+        // Fallback for Expo Go permission restrictions on Android 13+
+        try {
+          const res = await MediaLibrary.requestPermissionsAsync(true);
+          status = res.status;
+        } catch {}
+      }
+
       if (status !== 'granted') {
         setPermissionGranted(false);
         setLoading(false);
@@ -633,14 +646,34 @@ export default function GalleryScreen() {
     setSelectedIds(new Set());
   }, []);
 
+  const handleBack = useCallback(() => {
+    if (selectedIds.size > 0) {
+      exitMultiSelect();
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  }, [selectedIds, exitMultiSelect]);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [handleBack]);
+
   const handleShare = useCallback(
     async (photo: CapturedPhoto) => {
       try {
         await Share.share({
           url: photo.uri,
           message: photo.poseId
-            ? `Pose photo taken with Snap Pose (${mockPoseName(photo.poseId)})!`
-            : 'Photo taken with Snap Pose!',
+            ? `Pose photo taken with POSEHANUM (${mockPoseName(photo.poseId)})!`
+            : 'Photo taken with POSEHANUM!',
         });
       } catch {
         showToast({ message: 'Could not share photo', variant: 'error' });
@@ -753,7 +786,7 @@ export default function GalleryScreen() {
           Photos permission needed
         </Text>
         <Text style={[styles.stateBody, { color: theme.colors.textSecondary }]}>
-          Allow Snap Pose to access your photos to view your gallery.
+          Allow POSEHANUM to access your photos to view your gallery.
         </Text>
         <SPButton
           label="Grant Permission"
@@ -870,20 +903,40 @@ export default function GalleryScreen() {
             >
               {selectedIds.size} selected
             </Text>
-            <Pressable
-              style={styles.headerAction}
-              onPress={handleBatchDeleteRequest}
-              accessibilityRole="button"
-              accessibilityLabel={`Delete ${selectedIds.size} selected photos`}
-            >
-              <Text style={[styles.headerActionText, { color: Colors.error }]}>Delete</Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+              <Pressable
+                style={styles.headerAction}
+                onPress={async () => {
+                  const selectedPhotos = photos.filter((p) => selectedIds.has(p.id));
+                  if (selectedPhotos.length === 0) return;
+                  try {
+                    await Share.share({
+                      message: `Sharing ${selectedPhotos.length} photos captured with POSEHANUM`,
+                      url: selectedPhotos[0]?.uri,
+                    });
+                  } catch {}
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Share selected photos"
+              >
+                <SPIcon name="share" size={16} color={theme.colors.olive} />
+              </Pressable>
+              <Pressable
+                style={styles.headerAction}
+                onPress={handleBatchDeleteRequest}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${selectedIds.size} selected photos`}
+              >
+                <Text style={[styles.headerActionText, { color: Colors.error }]}>Delete</Text>
+              </Pressable>
+            </View>
           </>
         ) : (
           <>
             <Pressable
               style={styles.backButton}
-              onPress={() => router.back()}
+              onPress={handleBack}
+              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
               accessibilityRole="button"
               accessibilityLabel="Go back"
             >

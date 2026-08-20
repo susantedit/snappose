@@ -1,51 +1,41 @@
 import { extractStaticPoseLandmarks } from '../StaticLandmarkExtractor';
+import { getReferenceSkeletonForKey } from '../../domain/PoseScoreCalculator';
 
 describe('StaticLandmarkExtractor', () => {
+  const sampleSkeleton = getReferenceSkeletonForKey('WALKING_CASUAL');
+
   it('throws error when imageUri is empty', async () => {
     await expect(extractStaticPoseLandmarks('')).rejects.toThrow(
       'Image URI is required for landmark extraction.',
     );
   });
 
-  it('extracts exactly 33 landmarks for a standing pose', async () => {
+  it('returns success: false and NO_PERSON when image has no landmark data', async () => {
     const result = await extractStaticPoseLandmarks('file:///test/image.jpg', {
       category: 'street',
       difficulty: 'medium',
     });
 
+    expect(result.success).toBe(false);
+    expect(result.status).toBe('NO_PERSON');
+    expect(result.landmarks).toBeNull();
+    expect(result.confidence).toBe(0);
+  });
+
+  it('correctly processes genuine static pose landmarks when provided', async () => {
+    const result = await extractStaticPoseLandmarks('file:///test/valid_pose.jpg', {
+      category: 'street',
+      difficulty: 'medium',
+      rawLandmarks: sampleSkeleton,
+    });
+
     expect(result.success).toBe(true);
+    expect(result.status).toBe('REAL_LANDMARKS');
     expect(result.landmarkCount).toBe(33);
     expect(result.landmarks).toHaveLength(33);
-    expect(result.detectedPoseType).toBe('standing');
     expect(result.confidence).toBeGreaterThan(0.9);
-
-    // Verify all 33 coordinates are within [0, 1] range
-    for (const lm of result.landmarks) {
-      expect(lm.x).toBeGreaterThanOrEqual(0);
-      expect(lm.x).toBeLessThanOrEqual(1);
-      expect(lm.y).toBeGreaterThanOrEqual(0);
-      expect(lm.y).toBeLessThanOrEqual(1);
-      expect(lm.visibility).toBeGreaterThan(0.8);
-    }
-  });
-
-  it('adapts posture topology for sitting/cafe categories', async () => {
-    const result = await extractStaticPoseLandmarks('file:///test/cafe.jpg', {
-      category: 'cafe',
-      difficulty: 'easy',
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.detectedPoseType).toBe('sitting');
-    // Knees (25, 26) in sitting pose should have different relative coordinates
-    expect(result.landmarks[25].y).toBeGreaterThan(result.landmarks[11].y); // knee below shoulder
-  });
-
-  it('computes positive reference scale from shoulders to hips', async () => {
-    const result = await extractStaticPoseLandmarks('file:///test/portrait.jpg', {
-      category: 'portrait',
-    });
-
-    expect(result.normalised.referenceScale).toBeGreaterThan(0.1);
+    expect(result.normalised).not.toBeNull();
+    expect(result.normalised?.referenceScale).toBeGreaterThan(0.1);
   });
 });
+

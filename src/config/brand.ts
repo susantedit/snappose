@@ -32,7 +32,6 @@ export const BRAND_CONFIG = {
     email: 'susantedit@gmail.com',
     links: {
       github: 'https://github.com/susantedit',
-      youtube: 'https://www.youtube.com/@developersusant',
       instagram: 'https://instagram.com/susantgamerz',
       facebook: 'https://facebook.com/Kantaraj.Luitel',
       linkedin: 'https://linkedin.com/in/kantaraj-luitel',

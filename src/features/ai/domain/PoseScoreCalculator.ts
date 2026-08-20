@@ -77,7 +77,7 @@ if (_weightSum !== 100) {
 // Score coercion range (port of Kotlin coerceIn)
 // ---------------------------------------------------------------------------
 
-const SCORE_MIN = 15;
+const SCORE_MIN = 0;
 const SCORE_MAX = 98;
 
 /** Auto-capture readiness threshold [Req 17.6] */
@@ -118,12 +118,15 @@ export function angleBetween(a: Landmark, b: Landmark, c: Landmark): number {
 
 /**
  * Convert angular error (radians) to a 0–100 segment score.
- * Perfect alignment (0 rad) → 100; π rad error → 0.
+ * Uses a Gaussian decay curve so small natural deviations (0–15°) score well,
+ * while large angular errors (45–90°+) drop sharply to prevent false matches.
  */
 function angularErrorToScore(errorRad: number): number {
-  const normalised = Math.min(errorRad / Math.PI, 1.0);
-  return Math.round((1.0 - normalised) * 100);
+  const normalized = Math.min(errorRad / (Math.PI / 2), 1.0);
+  const score = Math.round(100 * Math.exp(-2.8 * normalized * normalized));
+  return Math.max(0, Math.min(100, score));
 }
+
 
 /**
  * Average angular error for a list of joint triples.
@@ -140,8 +143,9 @@ function regionScore(
     const uA = userLm[a];
     const uB = userLm[b];
     const uC = userLm[c];
+    if (!uA || !uB || !uC) continue;
     // Skip low-confidence landmarks
-    if (uA.visibility < 0.6 || uB.visibility < 0.6 || uC.visibility < 0.6) continue;
+    if ((uA.visibility ?? 1) < 0.5 || (uB.visibility ?? 1) < 0.5 || (uC.visibility ?? 1) < 0.5) continue;
 
     // Joint interior angle
     const refAngle = angleBetween(refLm[a], refLm[b], refLm[c]);
@@ -165,7 +169,7 @@ function regionScore(
     total += 0.5 * jointScore + 0.5 * oriScore;
     count++;
   }
-  return count === 0 ? 50 : Math.round(total / count);
+  return count === 0 ? 0 : Math.round(total / count);
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +238,7 @@ const FEET_TRIPLES: [number, number, number][] = [
  * Correctness invariants [Req 11]:
  *   - total ∈ [0, 100] always
  *   - when user === reference (within fp tolerance), total ≥ 95
- *   - sum of REGION_WEIGHTS === 100
+ *   - when no user or wrong pose, score accurately reflects divergence (0..40)
  */
 export function computePoseScore(
   user: NormalisedLandmarks | PoseLandmarks | Landmark[],
@@ -243,6 +247,38 @@ export function computePoseScore(
   const uLm = Array.isArray(user) ? user : user.landmarks;
   const rObj = typeof reference === 'string' ? getReferenceSkeletonForKey(reference as ReferencePoseKey) : reference;
   const rLm = Array.isArray(rObj) ? rObj : rObj.landmarks;
+
+  if (!uLm || uLm.length < 33 || !rLm || rLm.length < 33) {
+    const zeroRegional: RegionScores = { shoulders: 0, arms: 0, hands: 0, torso: 0, legs: 0, head: 0, feet: 0 };
+    return {
+      total: 0,
+      score: 0,
+      overallScore: 0,
+      regional: zeroRegional,
+      regionScores: zeroRegional,
+      regionalScores: zeroRegional,
+      guidanceCue: 'Step into the frame',
+      primaryGuidanceCue: 'Step into the frame',
+      isAutoCaptureReady: false,
+    };
+  }
+
+  // Validate presence of core body joints
+  const visibleCount = uLm.filter((lm) => (lm.visibility ?? 1) >= 0.5).length;
+  if (visibleCount < 12) {
+    const zeroRegional: RegionScores = { shoulders: 0, arms: 0, hands: 0, torso: 0, legs: 0, head: 0, feet: 0 };
+    return {
+      total: 0,
+      score: 0,
+      overallScore: 0,
+      regional: zeroRegional,
+      regionScores: zeroRegional,
+      regionalScores: zeroRegional,
+      guidanceCue: 'Full body not detected',
+      primaryGuidanceCue: 'Full body not detected',
+      isAutoCaptureReady: false,
+    };
+  }
 
   const shoulders = regionScore(uLm, rLm, SHOULDER_TRIPLES);
   const arms = regionScore(uLm, rLm, ARM_TRIPLES);
@@ -262,7 +298,7 @@ export function computePoseScore(
       feet * REGION_WEIGHTS.feet) /
     100;
 
-  // Coerce to [SCORE_MIN, SCORE_MAX] — port of Kotlin .coerceIn(15, 98) [Req 11]
+  // Strict score calculation without artificial inflated minimum
   const total = Math.round(Math.max(SCORE_MIN, Math.min(SCORE_MAX, weighted)));
   const guidanceCue = deriveGuidanceCue(total, user);
   const isAutoCapture = isAutoCaptureReady(total);
@@ -509,20 +545,20 @@ function buildWalkingCasualSkeleton(): BuiltReferenceSkeleton {
 function buildSeatedCafeSkeleton(): BuiltReferenceSkeleton {
   const base = buildStandingNeutralSkeleton();
   const lms = [...base];
-  // Raise hips (seated position — hips appear higher in frame)
-  lms[LM.LEFT_HIP] = lm(0.40, 0.50);
-  lms[LM.RIGHT_HIP] = lm(0.60, 0.50);
-  // Knees bent horizontally (90°)
-  lms[LM.LEFT_KNEE] = lm(0.35, 0.62);
-  lms[LM.RIGHT_KNEE] = lm(0.65, 0.62);
-  // Ankles below knees
-  lms[LM.LEFT_ANKLE] = lm(0.34, 0.78);
-  lms[LM.RIGHT_ANKLE] = lm(0.66, 0.78);
+  // Seated hips
+  lms[LM.LEFT_HIP] = lm(0.42, 0.52);
+  lms[LM.RIGHT_HIP] = lm(0.58, 0.52);
+  // Knees bent horizontally forward (90° joint angle: thigh horizontal)
+  lms[LM.LEFT_KNEE] = lm(0.26, 0.54);
+  lms[LM.RIGHT_KNEE] = lm(0.74, 0.54);
+  // Ankles dropped vertically below knees
+  lms[LM.LEFT_ANKLE] = lm(0.26, 0.80);
+  lms[LM.RIGHT_ANKLE] = lm(0.74, 0.80);
   // Arms: one hand on table (wrist low), one on knee
-  lms[LM.LEFT_ELBOW] = lm(0.30, 0.40);
-  lms[LM.LEFT_WRIST] = lm(0.32, 0.53);
-  lms[LM.RIGHT_ELBOW] = lm(0.70, 0.42);
-  lms[LM.RIGHT_WRIST] = lm(0.63, 0.56);
+  lms[LM.LEFT_ELBOW] = lm(0.30, 0.38);
+  lms[LM.LEFT_WRIST] = lm(0.28, 0.50);
+  lms[LM.RIGHT_ELBOW] = lm(0.70, 0.38);
+  lms[LM.RIGHT_WRIST] = lm(0.72, 0.50);
   return makeSkeleton(lms, 0.30);
 }
 

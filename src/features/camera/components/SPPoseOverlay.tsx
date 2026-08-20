@@ -30,6 +30,7 @@ import Animated, {
 
 import { SPIcon } from '@/components/atoms/SPIcon';
 import type { OverlayTransform } from '@/features/camera/types';
+import { getPoseImageUri } from '@/utils/imageUtils';
 import {
   applyPan,
   applyPinch,
@@ -92,7 +93,8 @@ export function SPPoseOverlay({
   void containerWidth;
   void containerHeight;
   // Load image with Skia — null if URI is null or image not loaded yet
-  const skiaImage = useImage(imageUri ?? '');
+  const resolvedUri = getPoseImageUri(imageUri);
+  const skiaImage = useImage(resolvedUri || undefined);
 
   // ── Shared values for smooth gesture-driven animation ─────────────────────
   const translateX = useSharedValue(transform.x);

@@ -202,6 +202,80 @@ export class FirebaseAuthAdapter implements AuthAdapter {
     }
   }
 
+  async signUp(email: string, password: string, displayName?: string): Promise<AppUser> {
+    const authFn = getAuth();
+    if (!authFn) {
+      const guest: AppUser = {
+        uid: `local_user_${Date.now()}`,
+        displayName: displayName || 'POSEHANUM User',
+        email,
+        photoURL: null,
+        provider: 'email',
+        isAnonymous: false,
+      };
+      this.localUser = guest;
+      return guest;
+    }
+    try {
+      const userCredential = await authFn().createUserWithEmailAndPassword(email, password);
+      if (displayName) {
+        try {
+          await userCredential.user.updateProfile({ displayName });
+        } catch {}
+      }
+      const token = await userCredential.user.getIdToken();
+      await this.saveTokens(userCredential.user.uid, token);
+      const appUser = mapFirebaseUser({ ...userCredential.user, displayName: displayName || userCredential.user.displayName });
+      if (!appUser) throw new Error('Failed to map user after sign-up');
+      this.localUser = appUser;
+      return appUser;
+    } catch (error) {
+      console.warn('[FirebaseAuthAdapter] signUp error:', error);
+      throw error;
+    }
+  }
+
+  async sendPasswordReset(email: string): Promise<void> {
+    const authFn = getAuth();
+    if (!authFn) return;
+    try {
+      await authFn().sendPasswordResetEmail(email);
+    } catch (error) {
+      console.warn('[FirebaseAuthAdapter] sendPasswordReset error:', error);
+      throw error;
+    }
+  }
+
+  async sendEmailVerification(): Promise<void> {
+    const authFn = getAuth();
+    if (!authFn) return;
+    try {
+      const currentUser = authFn().currentUser;
+      if (currentUser) {
+        await currentUser.sendEmailVerification();
+      }
+    } catch (error) {
+      console.warn('[FirebaseAuthAdapter] sendEmailVerification error:', error);
+    }
+  }
+
+  async deleteAccount(): Promise<void> {
+    const authFn = getAuth();
+    if (authFn) {
+      try {
+        const currentUser = authFn().currentUser;
+        if (currentUser) {
+          await currentUser.delete();
+        }
+      } catch (error) {
+        console.warn('[FirebaseAuthAdapter] deleteAccount error:', error);
+        throw error;
+      }
+    }
+    await this.clearTokens();
+    this.localUser = null;
+  }
+
   private async saveTokens(uid: string, token: string): Promise<void> {
     try {
       await SecureStore.setItemAsync(SECURE_STORE_TOKEN_KEY, token);

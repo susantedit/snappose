@@ -14,6 +14,7 @@
 
 import type { PoseDetector } from '../domain/interfaces/PoseDetector';
 import type { CameraFrame, LandmarkSet, Landmark } from '../types';
+import type { AiDetectionStatus } from '../domain/types';
 import { CrashlyticsService } from '@/services/firebase/crashlytics';
 
 // ---------------------------------------------------------------------------
@@ -22,13 +23,10 @@ import { CrashlyticsService } from '@/services/firebase/crashlytics';
 
 export const CONFIDENCE_THRESHOLD = 0.60;
 export const PAUSE_CONFIDENCE_THRESHOLD = 0.45;
-const INFERENCE_TIMEOUT_MS = 200;
-const MAX_CONSECUTIVE_DROPS = 10;
 
-type DetectorStatus = 'uninitialised' | 'ready' | 'paused' | 'failed';
-
-interface InferenceResult {
-  landmarks: LandmarkSet;
+export interface DetectionOutcome {
+  status: AiDetectionStatus;
+  landmarks: LandmarkSet | null;
   inferenceMs: number;
 }
 
@@ -37,71 +35,106 @@ interface InferenceResult {
 // ---------------------------------------------------------------------------
 
 export class MediaPipePoseDetector implements PoseDetector {
-  private _status: DetectorStatus = 'uninitialised';
-  private _consecutiveDrops = 0;
+  private _status: AiDetectionStatus = 'UNINITIALISED';
   private _lastLandmarks: LandmarkSet | null = null;
   private _smoothedLandmarks: LandmarkSet | null = null;
 
   async initialise(): Promise<void> {
     try {
       await this._loadModel();
-      this._status = 'ready';
-      this._consecutiveDrops = 0;
-      this._lastLandmarks = createAnatomicalNeutralPose();
-      this._smoothedLandmarks = createAnatomicalNeutralPose();
+      this._status = 'NO_PERSON';
+      this._lastLandmarks = null;
+      this._smoothedLandmarks = null;
     } catch (err) {
-      this._status = 'failed';
+      this._status = 'FAILED';
       console.warn('[MediaPipePoseDetector] initialise failed:', err);
       CrashlyticsService.recordError(err, 'MediaPipeInitError');
     }
   }
 
   async detect(frame?: CameraFrame): Promise<LandmarkSet | null> {
-    if (this._status !== 'ready') return null;
+    const outcome = await this.detectDetailed(frame);
+    return outcome.landmarks;
+  }
+
+  async detectDetailed(frame?: CameraFrame): Promise<DetectionOutcome> {
+    if (this._status === 'UNINITIALISED' || this._status === 'FAILED') {
+      return { status: this._status, landmarks: null, inferenceMs: 0 };
+    }
 
     const start = Date.now();
     try {
-      const result = await this._runInference(frame);
-      const elapsed = Date.now() - start;
+      // 1. Process genuine native camera frame landmarks if supplied
+      if (frame && (frame as any).landmarks) {
+        const rawLandmarks = (frame as any).landmarks;
+        const personCount = (frame as any).personCount ?? 1;
 
-      if (elapsed > INFERENCE_TIMEOUT_MS) {
-        this._consecutiveDrops++;
-        if (this._consecutiveDrops >= MAX_CONSECUTIVE_DROPS) {
-          await this._restartInferenceThread();
+        // Safety lockout: if multiple people are detected in the frame, prevent accidental scoring against the wrong person
+        if (personCount > 1) {
+          this._status = 'MULTIPLE_PEOPLE';
+          this._lastLandmarks = null;
+          this._smoothedLandmarks = null;
+          return { status: 'MULTIPLE_PEOPLE', landmarks: null, inferenceMs: Date.now() - start };
         }
-        return this._smoothedLandmarks;
+
+        const mapped = mapMediaPipeLandmarks(rawLandmarks);
+
+        if (mapped) {
+          // Check landmark visibility count to ensure full or partial body presence
+          const visiblePoints = mapped.filter((lm) => lm.visibility >= CONFIDENCE_THRESHOLD);
+          
+          if (visiblePoints.length < 8) {
+            this._status = 'NO_PERSON';
+            this._lastLandmarks = null;
+            this._smoothedLandmarks = null;
+            return { status: 'NO_PERSON', landmarks: null, inferenceMs: Date.now() - start };
+          }
+
+          if (visiblePoints.length < 16) {
+            this._status = 'LOW_CONFIDENCE';
+            this._lastLandmarks = mapped;
+            this._smoothedLandmarks = this._applyTemporalFilter(mapped);
+            return { status: 'LOW_CONFIDENCE', landmarks: this._smoothedLandmarks, inferenceMs: Date.now() - start };
+          }
+
+          this._status = 'REAL_LANDMARKS';
+          this._lastLandmarks = mapped;
+          this._smoothedLandmarks = this._applyTemporalFilter(mapped);
+          return { status: 'REAL_LANDMARKS', landmarks: this._smoothedLandmarks, inferenceMs: Date.now() - start };
+        }
       }
 
-      this._consecutiveDrops = 0;
-      this._lastLandmarks = result.landmarks;
-      this._smoothedLandmarks = this._applyTemporalFilter(result.landmarks);
-      return this._smoothedLandmarks;
+      // If no native frame or empty frame, strictly return NO_PERSON — NO FAKE/SYNTHETIC GENERATION
+      this._status = 'NO_PERSON';
+      this._lastLandmarks = null;
+      this._smoothedLandmarks = null;
+      return { status: 'NO_PERSON', landmarks: null, inferenceMs: Date.now() - start };
     } catch {
-      return this._smoothedLandmarks;
+      this._status = 'NO_PERSON';
+      return { status: 'NO_PERSON', landmarks: null, inferenceMs: Date.now() - start };
     }
   }
 
   destroy(): void {
-    this._status = 'uninitialised';
+    this._status = 'UNINITIALISED';
     this._lastLandmarks = null;
     this._smoothedLandmarks = null;
-    this._consecutiveDrops = 0;
     this._teardownModel();
   }
 
   pause(): void {
-    if (this._status === 'ready') {
-      this._status = 'paused';
+    if (this._status === 'REAL_LANDMARKS' || this._status === 'NO_PERSON') {
+      this._status = 'PROCESSING';
     }
   }
 
   resume(): void {
-    if (this._status === 'paused') {
-      this._status = 'ready';
+    if (this._status === 'PROCESSING') {
+      this._status = 'NO_PERSON';
     }
   }
 
-  get status(): DetectorStatus {
+  get detectionStatus(): AiDetectionStatus {
     return this._status;
   }
 
@@ -111,22 +144,7 @@ export class MediaPipePoseDetector implements PoseDetector {
 
   private async _loadModel(): Promise<void> {
     // MediaPipe model asset verification
-    await new Promise((r) => setTimeout(r, 40));
-  }
-
-  private async _runInference(frame?: CameraFrame): Promise<InferenceResult> {
-    // If native raw frame is supplied with mapped landmarks, consume directly
-    if (frame && (frame as any).landmarks) {
-      const mapped = mapMediaPipeLandmarks((frame as any).landmarks);
-      if (mapped) {
-        return { landmarks: mapped, inferenceMs: 16 };
-      }
-    }
-
-    // Live continuous on-device anatomical tracking
-    const t = Date.now() / 1000;
-    const liveLandmarks = generateLiveTrackingLandmarks(t);
-    return { landmarks: liveLandmarks, inferenceMs: 18 };
+    await new Promise((r) => setTimeout(r, 20));
   }
 
   private _applyTemporalFilter(current: LandmarkSet): LandmarkSet {
@@ -135,6 +153,7 @@ export class MediaPipePoseDetector implements PoseDetector {
     const alpha = 0.65; // Smoothing factor (0 = static, 1 = no smoothing)
     const filtered = current.map((lm, i) => {
       const prev = this._smoothedLandmarks![i];
+      if (!prev) return lm;
       return {
         x: prev.x * (1 - alpha) + lm.x * alpha,
         y: prev.y * (1 - alpha) + lm.y * alpha,
@@ -144,17 +163,6 @@ export class MediaPipePoseDetector implements PoseDetector {
     }) as LandmarkSet;
 
     return filtered;
-  }
-
-  private async _restartInferenceThread(): Promise<void> {
-    this._consecutiveDrops = 0;
-    this._teardownModel();
-    try {
-      await this._loadModel();
-      this._status = 'ready';
-    } catch {
-      this._status = 'failed';
-    }
   }
 
   private _teardownModel(): void {}
@@ -216,53 +224,17 @@ export function createAnatomicalNeutralPose(): LandmarkSet {
   return lm as LandmarkSet;
 }
 
-/**
- * Generates live continuous on-device anatomical tracking landmarks.
- */
-function generateLiveTrackingLandmarks(t: number): LandmarkSet {
-  const base = createAnatomicalNeutralPose();
-
-  // Natural human micro-sway and posture variations
-  const swayX = Math.sin(t * 1.2) * 0.015;
-  const swayY = Math.cos(t * 0.9) * 0.008;
-  const armSway = Math.sin(t * 1.5) * 0.025;
-
-  return base.map((p, idx) => {
-    let dx = swayX;
-    let dy = swayY;
-
-    // Head subtle tilt
-    if (idx <= 10) {
-      dx += Math.sin(t * 0.8) * 0.01;
-    }
-    // Arms movement
-    if (idx === 13 || idx === 15 || idx === 17 || idx === 19 || idx === 21) {
-      dx -= armSway;
-      dy += Math.cos(t * 1.5) * 0.015;
-    }
-    if (idx === 14 || idx === 16 || idx === 18 || idx === 20 || idx === 22) {
-      dx += armSway;
-      dy += Math.cos(t * 1.5) * 0.015;
-    }
-
-    return {
-      x: Math.max(0.05, Math.min(0.95, p.x + dx)),
-      y: Math.max(0.05, Math.min(0.95, p.y + dy)),
-      z: p.z,
-      visibility: p.visibility,
-    };
-  }) as LandmarkSet;
-}
-
 export function mapMediaPipeLandmarks(
-  raw: Array<{ x: number; y: number; z: number; visibility?: number }>,
+  raw: Array<{ x: number; y: number; z?: number; visibility?: number }>,
 ): LandmarkSet | null {
   if (!raw || raw.length < 33) return null;
   const mapped = raw.slice(0, 33).map((lm) => ({
     x: lm.x,
     y: lm.y,
-    z: lm.z,
+    z: lm.z ?? 0,
     visibility: lm.visibility ?? 0.9,
   }));
   return mapped as LandmarkSet;
 }
+
+

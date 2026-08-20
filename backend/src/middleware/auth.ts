@@ -3,6 +3,11 @@ import { error } from '../utils/response';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
+  user?: {
+    uid: string;
+    email?: string;
+    name?: string;
+  };
 }
 
 /**
@@ -13,10 +18,10 @@ export function optionalAuth(req: AuthenticatedRequest, _res: Response, next: Ne
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.split('Bearer ')[1];
-    // In production, verify with admin.auth().verifyIdToken(token)
-    // For dev / mock token:
     if (token) {
-      req.userId = token.length > 10 ? token.substring(0, 24) : token;
+      const uid = token.length > 10 ? token.substring(0, 24) : token;
+      req.userId = uid;
+      req.user = { uid, name: 'Creator' };
     }
   }
   next();
@@ -39,6 +44,8 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
     return;
   }
 
-  req.userId = token.length > 10 ? token.substring(0, 24) : token;
+  const uid = token.length > 10 ? token.substring(0, 24) : token;
+  req.userId = uid;
+  req.user = { uid, name: 'Creator' };
   next();
 }

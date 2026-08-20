@@ -11,9 +11,13 @@ import { SNAP_POSE_DATASET } from '../data/posesData';
 export const RECENTLY_VIEWED_KEY = 'recentlyViewed';
 const MAX_RECENTLY_VIEWED = 20;
 
-export const MOCK_TRENDING: Pose[] = SNAP_POSE_DATASET.slice(0, 8);
-export const MOCK_RECOMMENDED: Pose[] = SNAP_POSE_DATASET.slice(8, 16);
-export const MOCK_EDITORS_PICKS: Pose[] = SNAP_POSE_DATASET.slice(16, 24);
+export const MOCK_TRENDING: Pose[] = [
+  ...SNAP_POSE_DATASET.filter((p) => p.tags.includes('trending') || p.id.includes('drive') || p.id === 'pose-tony-stark-tpose').slice(0, 12),
+  ...SNAP_POSE_DATASET.slice(0, 12),
+].filter((p, index, self) => self.findIndex((s) => s.id === p.id) === index).slice(0, 12);
+
+export const MOCK_RECOMMENDED: Pose[] = SNAP_POSE_DATASET.slice(12, 24);
+export const MOCK_EDITORS_PICKS: Pose[] = SNAP_POSE_DATASET.slice(24, 36);
 
 async function fetchTrending(): Promise<Pose[]> {
   await new Promise((r) => setTimeout(r, 200));

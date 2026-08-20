@@ -2,7 +2,9 @@
  * SPPoseCard — Tactile editorial masonry pose card.
  *
  * Features:
- *  • Tactile compress (1 → 0.96 → 1) with Reanimated spring physics
+ *  • Full-bleed aesthetic editorial mode matching Pinterest / References feed layout
+ *  • Floating bottom-left translucent category tag pill (e.g. "Beach", "Selfie", "Nature", "Cafe")
+ *  • Tactile compress (1 → 0.965 → 1) with Reanimated spring physics
  *  • Subtle image zoom (1 → 1.04) on press
  *  • Signature favorite spring micro-interaction (1 → 1.35 → 0.95 → 1) with radial pulse ring
  *  • Haptic-feel feedback & accessibility hints
@@ -27,6 +29,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
+import { getPoseImageSource } from '@/utils/imageUtils';
+
 import { useTheme } from '@/constants/theme';
 import { BorderRadius, Colors, Spacing, Typography } from '@/constants/designTokens';
 import { SPBadge } from '@/components/atoms/SPBadge';
@@ -49,6 +53,7 @@ export interface SPPoseCardProps {
   isPremium?: boolean;
   width?: number;
   height?: number;
+  variant?: 'editorial' | 'standard';
   onPress?: (id: string) => void;
   onFavoritePress?: (id: string) => void;
   onCameraPress?: (id: string) => void;
@@ -67,11 +72,7 @@ const DIFFICULTY_BADGE: Record<PoseDifficulty, { label: string; variant: 'succes
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-// ---------------------------------------------------------------------------
-// SPPoseCard Component
-// ---------------------------------------------------------------------------
-
-export function SPPoseCard({
+export const SPPoseCard = React.memo(function SPPoseCard({
   id,
   name,
   category,
@@ -81,6 +82,7 @@ export function SPPoseCard({
   isPremium = false,
   width,
   height,
+  variant = 'editorial',
   onPress,
   onFavoritePress,
   onCameraPress,
@@ -149,7 +151,8 @@ export function SPPoseCard({
   }));
 
   const cardBg = theme.mode === 'dark' ? theme.colors.cardBackground : '#FFFFFF';
-  const imageHeight = height ? height * 0.62 : 164;
+  const cardHeight = height || 220;
+  const isEditorial = variant === 'editorial';
 
   return (
     <AnimatedPressable
@@ -159,13 +162,23 @@ export function SPPoseCard({
       accessibilityRole="button"
       accessibilityLabel={`${name} pose, ${category} category`}
       accessibilityHint="Double tap to view pose details"
-      style={[styles.card, { backgroundColor: cardBg, width }, style, animatedCardStyle]}
+      style={[
+        isEditorial ? styles.editorialCard : styles.card,
+        { backgroundColor: isEditorial ? 'transparent' : cardBg, width, height: isEditorial ? cardHeight : undefined },
+        style,
+        animatedCardStyle,
+      ]}
     >
       {/* Image Container with Zoom Reveal */}
-      <View style={[styles.imageContainer, { height: imageHeight }]}>
+      <View
+        style={[
+          styles.imageContainer,
+          isEditorial ? { height: '100%', borderRadius: 22 } : { height: cardHeight * 0.62 },
+        ]}
+      >
         {imageUri ? (
           <Animated.Image
-            source={{ uri: imageUri }}
+            source={getPoseImageSource(imageUri)}
             style={[styles.image, animatedImageStyle]}
             resizeMode="cover"
             accessibilityLabel={`${name} reference pose image`}
@@ -176,8 +189,22 @@ export function SPPoseCard({
           </View>
         )}
 
-        {/* Gradient shadow overlay */}
-        <View style={styles.imageOverlay} pointerEvents="none" />
+        {/* Dark Gradient Scrim Overlay at the bottom for guaranteed text legibility */}
+        <View style={styles.imageScrim} pointerEvents="none" />
+
+        {/* Editorial Floating Category Pill on Bottom-Left */}
+        {isEditorial && (
+          <View style={styles.editorialBottomWrap}>
+            <View style={styles.floatingCategoryPill}>
+              <Text style={styles.floatingCategoryText} numberOfLines={1}>
+                {category}
+              </Text>
+            </View>
+            <Text style={styles.editorialPoseTitle} numberOfLines={1}>
+              {name}
+            </Text>
+          </View>
+        )}
 
         {/* Premium badge */}
         {isPremium && (
@@ -186,7 +213,7 @@ export function SPPoseCard({
           </View>
         )}
 
-        {/* Favorite button with signature spring pulse */}
+        {/* Favorite button with signature spring pulse and 44x44 touch target */}
         <View style={styles.favoriteButtonContainer}>
           {/* Radial pulse ring */}
           <Animated.View style={[styles.pulseRing, pulseAnimatedStyle]} />
@@ -195,7 +222,7 @@ export function SPPoseCard({
             <Pressable
               onPress={handleHeartPress}
               style={styles.favoriteButton}
-              hitSlop={8}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               accessibilityRole="button"
               accessibilityLabel={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
               accessibilityHint="Double tap to toggle favorite"
@@ -213,43 +240,44 @@ export function SPPoseCard({
         </View>
       </View>
 
-      {/* Content */}
-      <View style={styles.content}>
-        {/* Name */}
-        <Text
-          style={[styles.name, { color: theme.colors.textPrimary }]}
-          numberOfLines={2}
-        >
-          {name}
-        </Text>
+      {/* Content for Standard View */}
+      {!isEditorial && (
+        <View style={styles.content}>
+          <Text
+            style={[styles.name, { color: theme.colors.textPrimary }]}
+            numberOfLines={2}
+          >
+            {name}
+          </Text>
 
-        {/* Pills row */}
-        <View style={styles.pills}>
-          <SPBadge label={category} variant="primary" />
-          {difficulty && (
-            <SPBadge
-              label={DIFFICULTY_BADGE[difficulty].label}
-              variant={DIFFICULTY_BADGE[difficulty].variant}
-              style={styles.ml6}
-            />
-          )}
+          <View style={styles.pills}>
+            <SPBadge label={category} variant="primary" />
+            {difficulty && (
+              <SPBadge
+                label={DIFFICULTY_BADGE[difficulty].label}
+                variant={DIFFICULTY_BADGE[difficulty].variant}
+                style={styles.ml6}
+              />
+            )}
+          </View>
         </View>
-      </View>
+      )}
 
-      {/* Camera shortcut — bottom-right tactile FAB */}
-      <Pressable
-        onPress={() => onCameraPress?.(id)}
-        style={[styles.cameraButton, { backgroundColor: Colors.olive }]}
-        hitSlop={4}
-        accessibilityRole="button"
-        accessibilityLabel={`Use ${name} pose in camera`}
-        accessibilityHint="Opens the camera with this pose overlay preloaded"
-      >
-        <SPIcon name="camera" size={17} color="#FFFFFF" strokeWidth={2.2} />
-      </Pressable>
+      {/* Camera shortcut on standard card */}
+      {!isEditorial && onCameraPress && (
+        <Pressable
+          onPress={() => onCameraPress(id)}
+          style={[styles.cameraButton, { backgroundColor: Colors.olive }]}
+          hitSlop={4}
+          accessibilityRole="button"
+          accessibilityLabel={`Use ${name} pose in camera`}
+        >
+          <SPIcon name="camera" size={17} color="#FFFFFF" strokeWidth={2.2} />
+        </Pressable>
+      )}
     </AnimatedPressable>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -265,10 +293,20 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
+  editorialCard: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+  },
   imageContainer: {
     width: '100%',
     position: 'relative',
     overflow: 'hidden',
+    backgroundColor: '#2A2A2A',
   },
   image: {
     width: '100%',
@@ -279,13 +317,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  imageOverlay: {
+  imageScrim: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 48,
-    backgroundColor: 'rgba(0,0,0,0.22)',
+    height: 90,
+    backgroundColor: 'rgba(0,0,0,0.48)',
+  },
+  editorialBottomWrap: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    right: 12,
+    gap: 4,
+  },
+  floatingCategoryPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(24, 24, 24, 0.78)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  floatingCategoryText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  editorialPoseTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   premiumBadge: {
     position: 'absolute',
@@ -294,8 +364,8 @@ const styles = StyleSheet.create({
   },
   favoriteButtonContainer: {
     position: 'absolute',
-    top: 6,
-    right: 6,
+    top: 8,
+    right: 8,
     width: 36,
     height: 36,
     alignItems: 'center',
@@ -312,9 +382,11 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
   content: {
     paddingHorizontal: Spacing.sm,
@@ -324,7 +396,7 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: Typography.sizes.sm,
-    fontWeight: Typography.weights.semibold as '600',
+    fontWeight: '700',
     lineHeight: 19,
   },
   pills: {

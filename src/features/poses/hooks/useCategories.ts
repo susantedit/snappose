@@ -305,6 +305,18 @@ export const ALL_CATEGORIES_DATA: CategoryWithMeta[] = [
     sortOrder: 23,
     isPremium: false,
   },
+  {
+    id: 'meme',
+    name: 'Meme Templates',
+    slug: 'meme',
+    image: 'https://drive.google.com/thumbnail?id=1mYLUXBtR9vaS6TVvlgzQDEwpGAWeOBaE&sz=w1000',
+    icon: '✨',
+    emoji: '✨',
+    color: '#FF6B6B',
+    totalPoses: 22,
+    sortOrder: 24,
+    isPremium: false,
+  },
 ];
 
 // ---------------------------------------------------------------------------

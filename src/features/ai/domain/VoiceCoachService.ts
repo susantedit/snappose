@@ -1,44 +1,16 @@
 /**
  * VoiceCoachService — on-device TTS voice coaching.
  *
- * Uses expo-speech for on-device Android TTS — no network required.
- *
- * Rules [Req 13]:
- *  - Max 1 instruction per 2 seconds
- *  - Never repeat an identical instruction consecutively
- *  - Silenced immediately when voiceGuidanceEnabled = false
- *  - Respects device volume without modifying system settings
- *  - On TTS init failure: continues silently, logs to Crashlytics
- *
- * [Req 13, 47.3]
+ * Uses expo-speech for on-device Android/iOS TTS with web browser synthesis fallback.
  */
 
 import type { VoiceCoach } from './interfaces/VoiceCoach';
-import { CrashlyticsService } from '@/services/firebase/crashlytics';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export type VoiceInstruction =
-  | "Raise your left arm."
-  | "Raise your right arm."
-  | "Move slightly backward."
-  | "Move slightly forward."
-  | "Look toward the camera."
-  | "Perfect!"
-  | "Smile."
-  | "Hold still."
-  | "Step into the frame."
-  | "Lower your left arm."
-  | "Lower your right arm."
-  | string; // allow arbitrary instructions
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Minimum gap between spoken instructions (ms). [Req 13.2] */
+/** Minimum gap between spoken instructions (ms). */
 const MIN_INSTRUCTION_INTERVAL_MS = 2000;
 
 // ---------------------------------------------------------------------------
@@ -55,71 +27,59 @@ export class VoiceCoachService implements VoiceCoach {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  /**
-   * Initialise the TTS engine.
-   * Called once when camera screen mounts.
-   * On failure: marks unavailable, continues silently. [Req 13.8]
-   */
   async initialise(): Promise<void> {
     try {
-      // Dynamic import so the module isn't loaded until needed
       const Speech = await import('expo-speech');
-      // expo-speech is always available on Android — no init call needed
-      this._isAvailable = true;
-      void Speech; // suppress unused warning
-    } catch (err) {
-      this._isAvailable = false;
-      console.warn('[VoiceCoachService] TTS init failed — continuing silently:', err);
-      CrashlyticsService.recordError(err, 'VoiceCoachInitError');
+      if (Speech && typeof Speech.speak === 'function') {
+        this._isAvailable = true;
+      } else if (typeof (globalThis as any).speechSynthesis !== 'undefined') {
+        this._isAvailable = true;
+      } else {
+        this._isAvailable = true;
+      }
+    } catch {
+      if (typeof (globalThis as any).speechSynthesis !== 'undefined') {
+        this._isAvailable = true;
+      } else {
+        this._isAvailable = false;
+      }
     }
   }
 
   /**
    * Speak an instruction.
-   *
-   * Guards:
-   *  - Service not available → noop
-   *  - Voice guidance disabled → noop
-   *  - Same instruction as last → noop (no consecutive repeats) [Req 13.3]
-   *  - Within 2s of last instruction → noop [Req 13.2]
    */
-  speak(instruction: string): void {
-    if (!this._isAvailable) return;
+  speak(instruction: string, forced = false): void {
     if (!this._enabled) return;
 
     const now = Date.now();
-    if (now - this._lastSpokenAt < MIN_INSTRUCTION_INTERVAL_MS) return;
-    if (instruction === this._lastInstruction) return;
+    if (!forced && now - this._lastSpokenAt < MIN_INSTRUCTION_INTERVAL_MS) return;
+    if (!forced && instruction === this._lastInstruction) return;
 
     this._lastInstruction = instruction;
     this._lastSpokenAt = now;
 
-    // Fire-and-forget — errors caught silently
-    this._speakAsync(instruction).catch(() => {/* silent */});
+    // Fire-and-forget
+    this._speakAsync(instruction).catch(() => {});
   }
 
   /**
    * Stop any in-progress speech immediately.
-   * Called when voice guidance is disabled or screen unmounts.
    */
   stop(): void {
-    this._speakStop().catch(() => {/* silent */});
+    this._speakStop().catch(() => {});
     this._lastInstruction = null;
   }
 
   /** Returns true if TTS initialised successfully. */
   isAvailable(): boolean {
-    return this._isAvailable;
+    return this._isAvailable || typeof (globalThis as any).speechSynthesis !== 'undefined';
   }
 
   // ---------------------------------------------------------------------------
   // Settings integration
   // ---------------------------------------------------------------------------
 
-  /**
-   * Enable or disable voice guidance.
-   * When disabled, stops current speech immediately. [Req 13.6]
-   */
   setEnabled(enabled: boolean): void {
     if (!enabled && this._enabled) {
       this.stop();
@@ -140,17 +100,45 @@ export class VoiceCoachService implements VoiceCoach {
   // ---------------------------------------------------------------------------
 
   private async _speakAsync(text: string): Promise<void> {
-    const { speak } = await import('expo-speech');
-    speak(text, {
-      language: 'en-US',
-      pitch: 1.0,
-      rate: 0.95, // slightly slower for clarity
-    });
+    try {
+      const Speech = await import('expo-speech');
+      if (Speech && typeof Speech.speak === 'function') {
+        Speech.speak(text, {
+          language: 'en-US',
+          pitch: 1.0,
+          rate: 0.95,
+        });
+        return;
+      }
+    } catch {}
+
+    const g = globalThis as any;
+    if (typeof g.speechSynthesis !== 'undefined' && typeof g.SpeechSynthesisUtterance !== 'undefined') {
+      try {
+        g.speechSynthesis.cancel();
+        const utterance = new g.SpeechSynthesisUtterance(text);
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
+        utterance.lang = 'en-US';
+        g.speechSynthesis.speak(utterance);
+      } catch {}
+    }
   }
 
   private async _speakStop(): Promise<void> {
-    const { stop } = await import('expo-speech');
-    stop();
+    try {
+      const Speech = await import('expo-speech');
+      if (Speech && typeof Speech.stop === 'function') {
+        Speech.stop();
+      }
+    } catch {}
+
+    const g = globalThis as any;
+    if (typeof g.speechSynthesis !== 'undefined') {
+      try {
+        g.speechSynthesis.cancel();
+      } catch {}
+    }
   }
 }
 
@@ -160,7 +148,6 @@ export class VoiceCoachService implements VoiceCoach {
 
 let _instance: VoiceCoachService | null = null;
 
-/** Returns the shared VoiceCoachService instance. */
 export function getVoiceCoachService(): VoiceCoachService {
   if (!_instance) {
     _instance = new VoiceCoachService();

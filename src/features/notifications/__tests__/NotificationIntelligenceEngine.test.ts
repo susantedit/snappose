@@ -19,17 +19,21 @@ describe('NotificationIntelligenceEngine', () => {
     preferredMinute: 30,
   };
 
-  const createBaseContext = (overrides?: Partial<NotificationEngineContext>): NotificationEngineContext => ({
-    lastActiveTimestamp: Date.now() - 3600 * 1000, // 1 hour ago
-    totalAttempts: 5,
-    bestScore: 78,
-    favoriteCategories: ['street', 'portrait'],
-    favoritePosesCount: 3,
-    currentTime: new Date(2026, 7, 17, 18, 0, 0), // 6:00 PM, Monday
-    recentDeliveredMessageIds: [],
-    consecutiveIgnoredCount: 0,
-    ...overrides,
-  });
+  const createBaseContext = (overrides?: Partial<NotificationEngineContext>): NotificationEngineContext => {
+    const fixedNow = new Date(2026, 7, 17, 18, 0, 0);
+    const currentTime = overrides?.currentTime ?? fixedNow;
+    return {
+      lastActiveTimestamp: currentTime.getTime() - 3600 * 1000, // 1 hour ago
+      totalAttempts: 5,
+      bestScore: 78,
+      favoriteCategories: ['street', 'portrait'],
+      favoritePosesCount: 3,
+      currentTime,
+      recentDeliveredMessageIds: [],
+      consecutiveIgnoredCount: 0,
+      ...overrides,
+    };
+  };
 
   it('returns null when notifications are globally disabled', () => {
     const engine = new NotificationIntelligenceEngine();
@@ -42,7 +46,8 @@ describe('NotificationIntelligenceEngine', () => {
 
   it('selects comeback notifications when user has been inactive for 4 days', () => {
     const engine = new NotificationIntelligenceEngine();
-    const fourDaysAgo = Date.now() - 4 * 24 * 3600 * 1000;
+    const base = createBaseContext();
+    const fourDaysAgo = base.currentTime.getTime() - 4 * 24 * 3600 * 1000;
     const result = engine.evaluateNextNotification(
       createBaseContext({ lastActiveTimestamp: fourDaysAgo }),
       mockPreferences,

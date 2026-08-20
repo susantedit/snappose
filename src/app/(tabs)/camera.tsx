@@ -17,6 +17,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackHandler,
   Dimensions,
   Image,
   Modal,
@@ -58,6 +59,7 @@ import { useCustomPoseStore } from '@/stores/customPoseStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
 import type { Pose } from '@/features/poses/types';
+import { getPoseImageSource } from '@/utils/imageUtils';
 
 // Real AI detection & scoring engines
 import { usePoseDetection } from '@/features/ai/hooks/usePoseDetection';
@@ -66,7 +68,12 @@ import { estimateDistance, type DistanceInput } from '@/features/camera/domain/D
 import { analyseFace } from '@/features/camera/domain/FaceAnalyser';
 import { SPSkeletonOverlay } from '@/features/camera/components/SPSkeletonOverlay';
 import { getVoiceCoachService } from '@/features/ai/domain/VoiceCoachService';
+import { directorModeEngine } from '@/features/ai/domain/DirectorModeEngine';
+import { postCaptureEvaluator, type PostCaptureEvaluationResult } from '@/features/camera/domain/PostCaptureEvaluator';
 import { SPCompareSlider } from '@/components/molecules/SPCompareSlider';
+import { AnimatedBottomSheet } from '@/components/motion/AnimatedBottomSheet';
+import { useUiVisibilityStore } from '@/stores/uiVisibilityStore';
+import { useBluetoothShutter } from '@/features/camera/hooks/useBluetoothShutter';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -95,7 +102,9 @@ export default function CameraScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ poseId?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
-  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
+  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions({
+    granularPermissions: ['photo'],
+  });
   const { toggleFavorite } = useFavorites();
   const { recordSignal } = usePersonalizationStore();
   const { customPoses } = useCustomPoseStore();
@@ -150,8 +159,14 @@ export default function CameraScreen() {
   // Shooting Mode: Subject Mode (Selfie/solo) vs Photographer Mode (Shooting someone else)
   const [shootingMode, setShootingMode] = useState<'subject' | 'photographer'>('subject');
 
+  // Dual Reference Mode: BLEND (semi-transparent photo) vs SKELETON (33-point AI skeleton)
+  const [referenceMode, setReferenceMode] = useState<'blend' | 'skeleton'>('blend');
+
   // Overlay Mode: Both (Ref + Skeleton) vs Reference Only vs Skeleton Only
   const [overlayLayerMode, setOverlayLayerMode] = useState<'both' | 'reference' | 'skeleton'>('both');
+
+  // Post-Capture Pose Accuracy Evaluation Result
+  const [postCaptureEvaluation, setPostCaptureEvaluation] = useState<PostCaptureEvaluationResult | null>(null);
 
   // Camera settings
   const [facing, setFacing] = useState<'back' | 'front'>('back');
@@ -182,12 +197,10 @@ export default function CameraScreen() {
   }, [voiceEnabled]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // REAL AI POSE DETECTION — replaces fake timer simulation
+  // REAL AI POSE DETECTION — strict on-device detection without synthetic floors
   // ═══════════════════════════════════════════════════════════════════════════
-  const { isReady: detectorReady, lastLandmarks } = usePoseDetection({
+  const { isReady: detectorReady, detectionStatus, lastLandmarks } = usePoseDetection({
     autoInit: true,
-    streaming: true,
-    targetFps: 15,
   });
 
   // Haptic threshold tracking
@@ -196,9 +209,27 @@ export default function CameraScreen() {
   // Capture result modal
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
+  const [showToolsDrawer, setShowToolsDrawer] = useState<boolean>(false);
 
   // Shutter Flash Animation
   const shutterFlashOpacity = useSharedValue(0);
+
+  // Smooth Camera UI Fade on Capture
+  const cameraUiOpacity = useSharedValue(1);
+
+  useEffect(() => {
+    const isBusy = isCapturing || isCountingDown;
+    useUiVisibilityStore.getState().setIsCapturing(isBusy);
+    if (isBusy) {
+      cameraUiOpacity.value = withTiming(0, { duration: 200 });
+    } else {
+      cameraUiOpacity.value = withTiming(1, { duration: 250 });
+    }
+  }, [isCapturing, isCountingDown, cameraUiOpacity]);
+
+  const cameraUiAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: cameraUiOpacity.value,
+  }));
 
   // Flip animation
   const flipRotation = useSharedValue(0);
@@ -257,29 +288,95 @@ export default function CameraScreen() {
   }, []);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // REAL AI SCORING — computed from detected landmarks against reference
+  // REAL AI SCORING — computed strictly from real camera landmarks
   // ═══════════════════════════════════════════════════════════════════════════
   const realAiState = useMemo(() => {
-    if (!lastLandmarks || !activePose) {
+    if (!detectorReady) {
       return {
+        status: 'UNINITIALISED' as const,
         score: 0,
-        color: '#FFB300',
-        text: detectorReady ? 'Step into the frame' : 'Initializing AI...',
-        dist: 'Waiting for detection',
+        color: '#8E8E93',
+        text: 'Initializing AI...',
+        dist: 'Starting camera...',
         light: 'Analyzing...',
         guidanceCue: null as string | null,
         smileProbability: 0,
         eyeContact: false,
+        isAutoCaptureReady: false,
       };
     }
 
-    // 1. Compute real pose score against reference skeleton (or custom pose extracted landmarks)
+    if (!lastLandmarks || detectionStatus === 'NO_PERSON') {
+      const activePrompt = activePose
+        ? (activePose.instructions?.[0] || `Match "${activePose.title}" silhouette`)
+        : 'Step into the frame';
+      return {
+        status: 'NO_PERSON' as const,
+        score: 0,
+        color: '#FF8A00',
+        text: activePrompt,
+        dist: activePose?.poseDna?.distance ? `Target: ${activePose.poseDna.distance}` : 'Waiting for person',
+        light: activePose?.lighting || 'Position yourself',
+        guidanceCue: activePrompt,
+        smileProbability: 0,
+        eyeContact: false,
+        isAutoCaptureReady: false,
+      };
+    }
+
+    if (detectionStatus === 'LOW_CONFIDENCE') {
+      return {
+        status: 'LOW_CONFIDENCE' as const,
+        score: 0,
+        color: '#FF8A00',
+        text: 'Step back to fit frame',
+        dist: 'Partial body detected',
+        light: 'Align full body',
+        guidanceCue: 'Step back to fit frame',
+        smileProbability: 0,
+        eyeContact: false,
+        isAutoCaptureReady: false,
+        regionalScores: { shoulders: 0, arms: 0, hands: 0, torso: 0, legs: 0, head: 0, feet: 0 },
+      };
+    }
+
+    if (detectionStatus === 'MULTIPLE_PEOPLE') {
+      return {
+        status: 'MULTIPLE_PEOPLE' as const,
+        score: 0,
+        color: '#FF3B30',
+        text: 'Only one person should be in frame',
+        dist: 'Multiple people detected',
+        light: 'Single subject required',
+        guidanceCue: 'Only one person should be in frame',
+        smileProbability: 0,
+        eyeContact: false,
+        isAutoCaptureReady: false,
+        regionalScores: { shoulders: 0, arms: 0, hands: 0, torso: 0, legs: 0, head: 0, feet: 0 },
+      };
+    }
+
+    if (!activePose) {
+      return {
+        status: 'NO_PERSON' as const,
+        score: 0,
+        color: '#8E8E93',
+        text: 'Select a reference pose',
+        dist: 'Waiting for pose',
+        light: 'Ready',
+        guidanceCue: null,
+        smileProbability: 0,
+        eyeContact: false,
+        isAutoCaptureReady: false,
+        regionalScores: { shoulders: 0, arms: 0, hands: 0, torso: 0, legs: 0, head: 0, feet: 0 },
+      };
+    }
+
+    // REAL_LANDMARKS: Compute actual angular cosine differences against reference
     const refSkeleton = activePose.landmarks ?? getReferenceSkeletonForKey('WALKING_CASUAL');
     const scoreResult = computePoseScore(lastLandmarks as any, refSkeleton);
     const score = scoreResult.total;
-    const guidanceCue = scoreResult.guidanceCue;
 
-    // 2. Compute real distance from shoulder landmarks
     const leftShoulder = lastLandmarks[11];
     const rightShoulder = lastLandmarks[12];
     const distInput: DistanceInput = {
@@ -287,12 +384,29 @@ export default function CameraScreen() {
       rightShoulder: { x: rightShoulder.x, y: rightShoulder.y, visibility: rightShoulder.visibility },
     };
     const distState = estimateDistance(distInput);
+    const distParam = distState === 'too_close' ? 'TOO_CLOSE' : distState === 'too_far' ? 'TOO_FAR' : 'OPTIMAL';
 
-    // 3. Compute real face analysis (smile + eye contact)
+    const directorStep = directorModeEngine.getNextStepInstruction(
+      score,
+      distParam,
+      'OPTIMAL',
+      shootingMode,
+      'single',
+      {
+        templateTitle: activePose.title,
+        shotRecipe: (activePose as any).shotRecipe,
+        poseDna: activePose.poseDna,
+        hasDetectedPerson: true,
+      }
+    );
+
+    const guidanceCue = scoreResult.guidanceCue || directorStep.headline;
+
     const normalisedForFace = { landmarks: lastLandmarks, referenceScale: 0.33 };
     const faceResult = analyseFace(normalisedForFace as any);
 
     return {
+      status: 'REAL_LANDMARKS' as const,
       score,
       color: scoreToColor(score),
       text: guidanceCue ?? (score >= 94 ? 'Perfect! Hold still' : 'Adjusting'),
@@ -301,8 +415,11 @@ export default function CameraScreen() {
       guidanceCue,
       smileProbability: faceResult.smileProbability,
       eyeContact: faceResult.eyeContactDetected,
+      isAutoCaptureReady: scoreResult.isAutoCaptureReady && score >= 85,
+      regionalScores: scoreResult.regionalScores,
+      directorStep,
     };
-  }, [lastLandmarks, activePose, detectorReady]);
+  }, [lastLandmarks, activePose, detectorReady, detectionStatus, shootingMode]);
 
   // Haptic feedback at real score thresholds (75%, 85%, 95%)
   useEffect(() => {
@@ -328,10 +445,10 @@ export default function CameraScreen() {
 
   // Real-time Voice Coach Guidance trigger
   useEffect(() => {
-    if (voiceEnabled && realAiState.text && realAiState.score > 0 && activePose) {
+    if (voiceEnabled && realAiState.text && activePose) {
       voiceCoachRef.current.speak(realAiState.text);
     }
-  }, [voiceEnabled, realAiState.text, realAiState.score, activePose]);
+  }, [voiceEnabled, realAiState.text, activePose]);
 
   // Capture Photo Handler
   const executeCapture = useCallback(async () => {
@@ -349,6 +466,16 @@ export default function CameraScreen() {
 
     const currentScore = realAiState.score;
     if (activePose) {
+      const evalResult = postCaptureEvaluator.evaluate(lastLandmarks, activePose);
+      setPostCaptureEvaluation(evalResult);
+
+      if (voiceEnabled) {
+        const verdictVoice = evalResult.isMatched
+          ? `Great pose! ${evalResult.totalScore}% alignment achieved.`
+          : `Photo captured at ${evalResult.totalScore}%. For next shot, ${evalResult.correctiveTips[0] || 'adjust posture'}`;
+        voiceCoachRef.current.speak(verdictVoice, true);
+      }
+
       recordSignal(
         {
           type: 'POSE_CAPTURED',
@@ -365,6 +492,8 @@ export default function CameraScreen() {
         score: currentScore,
         mode: shootingMode,
       });
+    } else {
+      setPostCaptureEvaluation(null);
     }
 
     try {
@@ -375,17 +504,27 @@ export default function CameraScreen() {
         });
         setCapturedPhotoUri(photo.uri);
       } else {
-        // Fallback simulation for emulator / web
         const sampleUrl = activePose?.imageUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800';
         setCapturedPhotoUri(sampleUrl);
       }
+
+      import('@/stores/onboardingChecklistStore').then(({ useOnboardingChecklistStore }) => {
+        useOnboardingChecklistStore.getState().markCompleted('capture_first_photo');
+      });
+      import('@/services/analytics/PostHogAnalyticsService').then(({ postHogAnalytics }) => {
+        postHogAnalytics.track('photo_captured', {
+          poseId: activePose?.id,
+          matchScore: currentScore,
+          mode: referenceMode,
+        });
+      });
     } catch {
       const sampleUrl = activePose?.imageUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800';
       setCapturedPhotoUri(sampleUrl);
     } finally {
       setIsCapturing(false);
     }
-  }, [activePose, reduceMotion, shutterFlashOpacity]);
+  }, [activePose, reduceMotion, shutterFlashOpacity, shootingMode, realAiState.score, lastLandmarks, recordSignal, recordAttempt]);
 
   // Shutter Press with Optional Countdown Timer
   const handlePressShutter = useCallback(() => {
@@ -414,15 +553,51 @@ export default function CameraScreen() {
     }
   }, [timerSeconds, isCountingDown, isCapturing, executeCapture]);
 
+  // Hardware BackHandler on Android: dismiss modals before exiting
+  useEffect(() => {
+    const onBackPress = () => {
+      if (capturedPhotoUri) {
+        setCapturedPhotoUri(null);
+        return true;
+      }
+      if (showComparisonSlider) {
+        setShowComparisonSlider(false);
+        return true;
+      }
+      if (showToolsDrawer) {
+        setShowToolsDrawer(false);
+        return true;
+      }
+      return false;
+    };
+
+    const backSubscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => backSubscription.remove();
+  }, [capturedPhotoUri, showComparisonSlider, showToolsDrawer]);
+
+  // Bluetooth / Volume Shutter Trigger
+  useBluetoothShutter({
+    enabled: true,
+    onShutterTrigger: () => {
+      if (!isCapturing && !isCountingDown) {
+        handlePressShutter();
+      }
+    },
+  });
+
   // Save to Gallery Action
   const handleSaveToGallery = useCallback(async () => {
     if (!capturedPhotoUri) return;
 
     if (!mediaPermission?.granted) {
-      const { status } = await requestMediaPermission();
-      if (status !== 'granted') {
-        showToast({ message: 'Media storage permission required', variant: 'error' });
-        return;
+      try {
+        const res = await requestMediaPermission();
+        if (res && res.status !== 'granted') {
+          showToast({ message: 'Media storage permission required', variant: 'error' });
+          return;
+        }
+      } catch (permError) {
+        // Fallback for Expo Go media permission restriction on Android 13+
       }
     }
 
@@ -441,8 +616,8 @@ export default function CameraScreen() {
     if (!capturedPhotoUri) return;
     try {
       await Share.share({
-        title: 'Snap Pose Match',
-        message: 'Shot with Snap Pose AI Guidance!',
+        title: 'POSEHANUM Match',
+        message: 'Shot with POSEHANUM AI Guidance!',
         url: capturedPhotoUri,
       });
     } catch {
@@ -461,7 +636,7 @@ export default function CameraScreen() {
           </View>
           <Text style={styles.permissionTitle}>Camera Access Required</Text>
           <Text style={styles.permissionDesc}>
-            Snap Pose needs camera permissions to display live alignment silhouettes and capture matching poses.
+            POSEHANUM needs camera permissions to display live alignment silhouettes and capture matching poses.
           </Text>
           <SPButton
             label="Grant Camera Access"
@@ -508,19 +683,19 @@ export default function CameraScreen() {
           </View>
         )}
 
-        {/* Pose Assist Silhouette Overlay */}
-        {activePose && showOverlay && (
+        {/* Pose Assist Silhouette Overlay — BLEND MODE */}
+        {activePose && showOverlay && referenceMode === 'blend' && (
           <View style={styles.poseOverlayWrapper} pointerEvents="none">
             <Image
-              source={{ uri: activePose.imageUrl }}
+              source={getPoseImageSource(activePose.imageUrl)}
               style={[styles.poseOverlayImage, { opacity: overlayOpacity }]}
               resizeMode="contain"
             />
           </View>
         )}
 
-        {/* Real-Time Skeleton Overlay — driven by live pose detection */}
-        {activePose && showOverlay && (overlayLayerMode === 'skeleton' || overlayLayerMode === 'both') && lastLandmarks && (
+        {/* Real-Time Skeleton Overlay — SKELETON MODE */}
+        {activePose && showOverlay && (referenceMode === 'skeleton' || overlayLayerMode === 'both') && lastLandmarks && (
           <SPSkeletonOverlay
             landmarks={lastLandmarks ? { landmarks: lastLandmarks, referenceScale: 0.33 } : null}
             poseScore={realAiState.score > 0 ? { total: realAiState.score, regional: computePoseScore(lastLandmarks as any, getReferenceSkeletonForKey('WALKING_CASUAL')).regional } : null}
@@ -531,7 +706,7 @@ export default function CameraScreen() {
         )}
       </View>
 
-      {/* ── Top Controls Bar ─────────────────────────────────────────── */}
+      {/* ── Top Controls Bar with De-cluttered Layout ────────────────── */}
       <Animated.View
         entering={reduceMotion ? undefined : FadeInDown.duration(400)}
         style={[
@@ -539,7 +714,9 @@ export default function CameraScreen() {
           {
             paddingTop: insets.top + Spacing.sm,
           },
+          cameraUiAnimatedStyle,
         ]}
+        pointerEvents={isCapturing || isCountingDown ? 'none' : 'box-none'}
       >
         <AnimatedPressable
           onPress={() => router.back()}
@@ -551,62 +728,25 @@ export default function CameraScreen() {
         </AnimatedPressable>
 
         <View style={styles.topRightControls}>
-          {/* Flash Toggle */}
-          <AnimatedPressable
-            onPress={handleCycleFlash}
-            scaleTo={0.88}
-            style={[styles.controlCircle, flash !== 'off' && styles.controlCircleActive]}
-            accessibilityLabel={`Flash ${flash}`}
-          >
-            <SPIcon
-              name={flash === 'off' ? 'flashOff' : 'flash'}
-              size={18}
-              color={flash !== 'off' ? '#FFF' : '#AAA'}
-              strokeWidth={2}
-            />
-          </AnimatedPressable>
-
-          {/* Grid Toggle */}
-          <AnimatedPressable
-            onPress={handleCycleGrid}
-            scaleTo={0.88}
-            style={[styles.controlCircle, gridMode !== 'none' && styles.controlCircleActive]}
-            accessibilityLabel="Grid mode"
-          >
-            <SPIcon name="grid" size={18} color="#FFF" strokeWidth={2} />
-          </AnimatedPressable>
-
-          {/* Timer Toggle */}
-          <AnimatedPressable
-            onPress={handleCycleTimer}
-            scaleTo={0.88}
-            style={[styles.controlCircle, timerSeconds > 0 && styles.controlCircleActive]}
-            accessibilityLabel={`Timer ${timerSeconds}s`}
-          >
-            <SPIcon name="timer" size={18} color="#FFF" strokeWidth={2} />
-            {timerSeconds > 0 && (
-              <Text style={styles.timerBadge}>{timerSeconds}s</Text>
-            )}
-          </AnimatedPressable>
-
-          {/* Voice Coach Toggle */}
+          {/* Quick Tools Drawer Button */}
           <AnimatedPressable
             onPress={() => {
-              setVoiceEnabled((v) => !v);
               try {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               } catch {}
+              setShowToolsDrawer(true);
             }}
             scaleTo={0.88}
-            style={[styles.controlCircle, voiceEnabled && styles.controlCircleActive]}
-            accessibilityLabel={`Voice Coach ${voiceEnabled ? 'On' : 'Off'}`}
+            style={[
+              styles.controlCircle,
+              (flash !== 'off' || gridMode !== 'none' || timerSeconds > 0 || !voiceEnabled) && styles.controlCircleActive,
+            ]}
+            accessibilityLabel="Open camera tools menu"
           >
-            <SPIcon
-              name={voiceEnabled ? 'volume' : 'volumeOff'}
-              size={18}
-              color={voiceEnabled ? '#FFF' : '#AAA'}
-              strokeWidth={2}
-            />
+            <SPIcon name="sliders" size={18} color="#FFF" strokeWidth={2} />
+            {(flash !== 'off' || timerSeconds > 0) && (
+              <View style={styles.activeDot} />
+            )}
           </AnimatedPressable>
 
           {/* Flip Camera */}
@@ -625,14 +765,19 @@ export default function CameraScreen() {
       {activePose && (
         <Animated.View
           entering={reduceMotion ? undefined : FadeInDown.duration(450).delay(150)}
-          style={[styles.activePoseCardWrap, { top: insets.top + 70 }]}
+          style={[
+            styles.activePoseCardWrap,
+            { top: insets.top + 65 },
+            cameraUiAnimatedStyle,
+          ]}
+          pointerEvents={isCapturing || isCountingDown ? 'none' : 'box-none'}
         >
           {/* Active Pose Header Card */}
           <View style={styles.poseHeaderCard}>
             <View style={styles.poseHeaderLeft}>
               <View style={styles.poseThumbnailWrap}>
                 <Image
-                  source={{ uri: activePose.imageUrl }}
+                  source={getPoseImageSource(activePose.imageUrl)}
                   style={styles.poseThumbnail}
                 />
               </View>
@@ -642,47 +787,30 @@ export default function CameraScreen() {
               </View>
             </View>
 
-            {/* Close / Overlay Toggle */}
+            {/* Quick Tools & Dismiss */}
             <View style={styles.poseHeaderRight}>
               <Pressable
                 onPress={() => setShowOverlay((v) => !v)}
                 style={[styles.miniButton, !showOverlay && { opacity: 0.5 }]}
+                accessibilityLabel="Toggle reference overlay"
               >
                 <SPIcon name={showOverlay ? 'eye' : 'eyeOff'} size={16} color="#FFF" strokeWidth={2} />
               </Pressable>
               <Pressable
+                onPress={() => setShowToolsDrawer(true)}
+                style={styles.miniButton}
+                accessibilityLabel="Adjust pose overlay tools"
+              >
+                <SPIcon name="sliders" size={14} color="#FFF" strokeWidth={2} />
+              </Pressable>
+              <Pressable
                 onPress={() => setActivePoseId(null)}
                 style={styles.miniButton}
+                accessibilityLabel="Clear reference pose"
               >
                 <SPIcon name="close" size={14} color="#FFF" strokeWidth={2.4} />
               </Pressable>
             </View>
-          </View>
-
-          {/* Mode & Layer Control Strip */}
-          <View style={styles.modeControlStrip}>
-            <Pressable
-              onPress={() => setShootingMode((m) => (m === 'subject' ? 'photographer' : 'subject'))}
-              style={[styles.modePill, shootingMode === 'photographer' && styles.modePillActive]}
-            >
-              <SPIcon name="camera" size={12} color={shootingMode === 'photographer' ? '#0A0E0C' : '#FFF'} />
-              <Text style={[styles.modePillText, shootingMode === 'photographer' && styles.modePillTextActive]}>
-                {shootingMode === 'photographer' ? 'PHOTOGRAPHER MODE' : 'SUBJECT MODE'}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() =>
-                setOverlayLayerMode((l) =>
-                  l === 'both' ? 'reference' : l === 'reference' ? 'skeleton' : 'both',
-                )
-              }
-              style={styles.layerPill}
-            >
-              <Text style={styles.layerPillText}>
-                LAYER: {overlayLayerMode.toUpperCase()}
-              </Text>
-            </Pressable>
           </View>
 
           {/* AI Guidance Status & Score Ring */}
@@ -699,9 +827,53 @@ export default function CameraScreen() {
               </View>
             </View>
             <View style={styles.aiStatusWrap}>
-              <Text style={styles.aiLabel}>
-                {shootingMode === 'photographer' ? 'PHOTOGRAPHER CUE' : 'AI POSE GUIDE'}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.aiLabel}>
+                  {shootingMode === 'photographer' ? 'PHOTOGRAPHER CUE' : 'AI POSE GUIDE'}
+                </Text>
+                <View
+                  style={{
+                    backgroundColor:
+                      currentAiGuide.status === 'REAL_LANDMARKS'
+                        ? 'rgba(76, 175, 80, 0.25)'
+                        : currentAiGuide.status === 'MULTIPLE_PEOPLE'
+                          ? 'rgba(255, 59, 48, 0.25)'
+                          : 'rgba(255, 138, 0, 0.25)',
+                    paddingHorizontal: 5,
+                    paddingVertical: 1,
+                    borderRadius: 4,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 8,
+                      fontWeight: '800',
+                      color:
+                        currentAiGuide.status === 'REAL_LANDMARKS'
+                          ? '#4CAF50'
+                          : currentAiGuide.status === 'MULTIPLE_PEOPLE'
+                            ? '#FF3B30'
+                            : '#FF8A00',
+                    }}
+                  >
+                    {currentAiGuide.status === 'REAL_LANDMARKS'
+                      ? 'REAL TRACKING'
+                      : currentAiGuide.status === 'LOW_CONFIDENCE'
+                        ? 'PARTIAL BODY'
+                        : currentAiGuide.status === 'MULTIPLE_PEOPLE'
+                          ? 'MULTIPLE PEOPLE'
+                          : 'NO PERSON'}
+                  </Text>
+                </View>
+                {voiceEnabled && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 4 }}>
+                    <View style={{ width: 2, height: 6, backgroundColor: '#4CAF50', borderRadius: 1 }} />
+                    <View style={{ width: 2, height: 12, backgroundColor: '#4CAF50', borderRadius: 1 }} />
+                    <View style={{ width: 2, height: 8, backgroundColor: '#4CAF50', borderRadius: 1 }} />
+                    <View style={{ width: 2, height: 4, backgroundColor: '#4CAF50', borderRadius: 1 }} />
+                  </View>
+                )}
+              </View>
               <Text style={styles.aiStatusText}>
                 {shootingMode === 'photographer'
                   ? `Guide subject: "${currentAiGuide.text}"`
@@ -710,17 +882,35 @@ export default function CameraScreen() {
             </View>
           </View>
 
-          {/* Environmental AI Metrics (Distance & Light) */}
-          <View style={styles.envMetricsRow}>
-            <View style={styles.envBadge}>
-              <SPIcon name="expand" size={11} color={Colors.olive} />
-              <Text style={styles.envBadgeText}>{currentAiGuide.dist}</Text>
+          {/* Live Regional Scores Breakdown */}
+          {currentAiGuide.regionalScores && (
+            <View style={styles.regionalScoresRow}>
+              <View style={styles.regionalChip}>
+                <Text style={styles.regionalChipLabel}>Shoulders</Text>
+                <Text style={[styles.regionalChipValue, { color: scoreToColor(currentAiGuide.regionalScores.shoulders) }]}>
+                  {currentAiGuide.regionalScores.shoulders}%
+                </Text>
+              </View>
+              <View style={styles.regionalChip}>
+                <Text style={styles.regionalChipLabel}>Arms</Text>
+                <Text style={[styles.regionalChipValue, { color: scoreToColor(currentAiGuide.regionalScores.arms) }]}>
+                  {currentAiGuide.regionalScores.arms}%
+                </Text>
+              </View>
+              <View style={styles.regionalChip}>
+                <Text style={styles.regionalChipLabel}>Torso</Text>
+                <Text style={[styles.regionalChipValue, { color: scoreToColor(currentAiGuide.regionalScores.torso) }]}>
+                  {currentAiGuide.regionalScores.torso}%
+                </Text>
+              </View>
+              <View style={styles.regionalChip}>
+                <Text style={styles.regionalChipLabel}>Legs</Text>
+                <Text style={[styles.regionalChipValue, { color: scoreToColor(currentAiGuide.regionalScores.legs) }]}>
+                  {currentAiGuide.regionalScores.legs}%
+                </Text>
+              </View>
             </View>
-            <View style={styles.envBadge}>
-              <SPIcon name="sunny" size={11} color={Colors.oliveDark} />
-              <Text style={styles.envBadgeText}>Light: {currentAiGuide.light}</Text>
-            </View>
-          </View>
+          )}
         </Animated.View>
       )}
 
@@ -731,37 +921,55 @@ export default function CameraScreen() {
         </View>
       )}
 
-      {/* ── Bottom Capture Bar ────────────────────────────────────────── */}
-      <View
+      {/* ── Bottom Capture Bar (Smoothly Fades Out on Capture) ────────── */}
+      <Animated.View
         style={[
           styles.bottomBar,
           { paddingBottom: insets.bottom + Spacing.md },
+          cameraUiAnimatedStyle,
         ]}
+        pointerEvents={isCapturing || isCountingDown ? 'none' : 'box-none'}
       >
-        {/* Opacity Slider Selector */}
-        {activePose && showOverlay && (
-          <View style={styles.opacityRow}>
-            <Text style={styles.opacityTitle}>Guide Opacity</Text>
-            <View style={styles.opacityButtons}>
-              {[0.25, 0.45, 0.7].map((op) => (
-                <Pressable
-                  key={op}
-                  onPress={() => setOverlayOpacity(op)}
-                  style={[
-                    styles.opacityBtn,
-                    overlayOpacity === op && styles.opacityBtnActive,
-                  ]}
-                >
-                  <Text style={styles.opacityBtnText}>{Math.round(op * 100)}%</Text>
-                </Pressable>
-              ))}
-            </View>
+        {/* Reference Mode Switcher: BLEND vs SKELETON */}
+        {activePose && (
+          <View style={styles.modeSwitcherContainer}>
+            <Pressable
+              onPress={() => {
+                setReferenceMode('blend');
+                try {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                } catch {}
+              }}
+              style={[styles.modeSwitchPill, referenceMode === 'blend' && styles.modeSwitchPillActive]}
+              accessibilityLabel="Switch to Photo Blend reference mode"
+            >
+              <SPIcon name="image" size={13} color={referenceMode === 'blend' ? '#FFF' : '#AAA'} />
+              <Text style={[styles.modeSwitchText, referenceMode === 'blend' && styles.modeSwitchTextActive]}>
+                BLEND
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                setReferenceMode('skeleton');
+                try {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                } catch {}
+              }}
+              style={[styles.modeSwitchPill, referenceMode === 'skeleton' && styles.modeSwitchPillActive]}
+              accessibilityLabel="Switch to AI Skeleton reference mode"
+            >
+              <SPIcon name="sparkles" size={13} color={referenceMode === 'skeleton' ? '#FFF' : '#AAA'} />
+              <Text style={[styles.modeSwitchText, referenceMode === 'skeleton' && styles.modeSwitchTextActive]}>
+                SKELETON
+              </Text>
+            </Pressable>
           </View>
         )}
 
-        {/* Shutter Action Row */}
+        {/* Shutter Action Row with Large Prominent Center Shutter */}
         <View style={styles.shutterRow}>
-          {/* Gallery Button */}
+          {/* Gallery Shortcut */}
           <AnimatedPressable
             onPress={() => router.push('/gallery')}
             scaleTo={0.88}
@@ -771,7 +979,7 @@ export default function CameraScreen() {
             <SPIcon name="gallery" size={22} color="#FFF" strokeWidth={2} />
           </AnimatedPressable>
 
-          {/* Main Shutter Button with tactile spring */}
+          {/* Main Shutter Button with tactile spring & glowing green ring */}
           <AnimatedPressable
             onPress={handlePressShutter}
             disabled={isCapturing}
@@ -791,17 +999,160 @@ export default function CameraScreen() {
             />
           </AnimatedPressable>
 
-          {/* Poses Switcher */}
+          {/* Quick Tools Drawer Trigger */}
           <AnimatedPressable
-            onPress={() => router.push('/(tabs)')}
+            onPress={() => setShowToolsDrawer(true)}
             scaleTo={0.88}
             style={styles.bottomSideBtn}
-            accessibilityLabel="Browse poses"
+            accessibilityLabel="Open camera tools"
           >
-            <SPIcon name="sparkles" size={22} color="#FFF" strokeWidth={2} />
+            <SPIcon name="sliders" size={22} color="#FFF" strokeWidth={2} />
           </AnimatedPressable>
         </View>
-      </View>
+      </Animated.View>
+
+      {/* ── Expandable Quick Camera Tools Bottom Sheet ───────────────── */}
+      <AnimatedBottomSheet
+        visible={showToolsDrawer}
+        onClose={() => setShowToolsDrawer(false)}
+      >
+        <View style={styles.drawerContent}>
+          <Text style={styles.drawerTitle}>Camera & Guidance Tools</Text>
+
+          {/* Shooting Mode (Subject vs Photographer) */}
+          <View style={styles.drawerSection}>
+            <Text style={styles.drawerSectionLabel}>SHOOTING MODE</Text>
+            <View style={styles.drawerRow}>
+              <AnimatedPressable
+                onPress={() => setShootingMode('subject')}
+                scaleTo={0.94}
+                style={[
+                  styles.drawerPillBtn,
+                  shootingMode === 'subject' && styles.drawerPillBtnActive,
+                ]}
+              >
+                <SPIcon name="user" size={14} color={shootingMode === 'subject' ? '#FFF' : '#AAA'} />
+                <Text style={[styles.drawerPillText, shootingMode === 'subject' && styles.drawerPillTextActive]}>
+                  Subject Mode
+                </Text>
+              </AnimatedPressable>
+
+              <AnimatedPressable
+                onPress={() => setShootingMode('photographer')}
+                scaleTo={0.94}
+                style={[
+                  styles.drawerPillBtn,
+                  shootingMode === 'photographer' && styles.drawerPillBtnActive,
+                ]}
+              >
+                <SPIcon name="camera" size={14} color={shootingMode === 'photographer' ? '#FFF' : '#AAA'} />
+                <Text style={[styles.drawerPillText, shootingMode === 'photographer' && styles.drawerPillTextActive]}>
+                  Photographer Mode
+                </Text>
+              </AnimatedPressable>
+            </View>
+          </View>
+
+          {/* Overlay Layer & Opacity (When Pose Active) */}
+          {activePose && (
+            <View style={styles.drawerSection}>
+              <Text style={styles.drawerSectionLabel}>OVERLAY LAYERS & OPACITY</Text>
+              <View style={styles.drawerRow}>
+                {(['both', 'reference', 'skeleton'] as const).map((layer) => (
+                  <AnimatedPressable
+                    key={layer}
+                    onPress={() => setOverlayLayerMode(layer)}
+                    scaleTo={0.94}
+                    style={[
+                      styles.drawerPillBtn,
+                      overlayLayerMode === layer && styles.drawerPillBtnActive,
+                    ]}
+                  >
+                    <Text style={[styles.drawerPillText, overlayLayerMode === layer && styles.drawerPillTextActive]}>
+                      {layer.toUpperCase()}
+                    </Text>
+                  </AnimatedPressable>
+                ))}
+              </View>
+
+              <View style={[styles.drawerRow, { marginTop: 10 }]}>
+                {[0.25, 0.45, 0.7, 1.0].map((op) => (
+                  <AnimatedPressable
+                    key={op}
+                    onPress={() => setOverlayOpacity(op)}
+                    scaleTo={0.94}
+                    style={[
+                      styles.drawerPillBtn,
+                      overlayOpacity === op && styles.drawerPillBtnActive,
+                    ]}
+                  >
+                    <Text style={[styles.drawerPillText, overlayOpacity === op && styles.drawerPillTextActive]}>
+                      {Math.round(op * 100)}%
+                    </Text>
+                  </AnimatedPressable>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Flash, Timer & Grid */}
+          <View style={styles.drawerSection}>
+            <Text style={styles.drawerSectionLabel}>CAPTURE SETTINGS</Text>
+            <View style={styles.drawerSettingsGrid}>
+              <AnimatedPressable
+                onPress={handleCycleFlash}
+                scaleTo={0.94}
+                style={styles.drawerSettingCard}
+              >
+                <SPIcon name={flash === 'off' ? 'flashOff' : 'flash'} size={18} color={flash !== 'off' ? Colors.olive : '#FFF'} />
+                <Text style={styles.drawerSettingTitle}>Flash: {flash.toUpperCase()}</Text>
+              </AnimatedPressable>
+
+              <AnimatedPressable
+                onPress={handleCycleTimer}
+                scaleTo={0.94}
+                style={styles.drawerSettingCard}
+              >
+                <SPIcon name="timer" size={18} color={timerSeconds > 0 ? Colors.olive : '#FFF'} />
+                <Text style={styles.drawerSettingTitle}>Timer: {timerSeconds > 0 ? `${timerSeconds}s` : 'OFF'}</Text>
+              </AnimatedPressable>
+
+              <AnimatedPressable
+                onPress={handleCycleGrid}
+                scaleTo={0.94}
+                style={styles.drawerSettingCard}
+              >
+                <SPIcon name="grid" size={18} color={gridMode !== 'none' ? Colors.olive : '#FFF'} />
+                <Text style={styles.drawerSettingTitle}>Grid: {gridMode.toUpperCase()}</Text>
+              </AnimatedPressable>
+
+              <AnimatedPressable
+                onPress={() => setVoiceEnabled((v) => !v)}
+                scaleTo={0.94}
+                style={styles.drawerSettingCard}
+              >
+                <SPIcon name={voiceEnabled ? 'volume' : 'volumeOff'} size={18} color={voiceEnabled ? Colors.olive : '#AAA'} />
+                <Text style={styles.drawerSettingTitle}>Voice: {voiceEnabled ? 'ON' : 'OFF'}</Text>
+              </AnimatedPressable>
+            </View>
+          </View>
+
+          {/* Environmental Sensors */}
+          <View style={styles.drawerSection}>
+            <Text style={styles.drawerSectionLabel}>ENVIRONMENTAL SENSORS</Text>
+            <View style={styles.drawerRow}>
+              <View style={styles.sensorBadge}>
+                <SPIcon name="expand" size={13} color={Colors.olive} />
+                <Text style={styles.sensorBadgeText}>Distance: {currentAiGuide.dist}</Text>
+              </View>
+              <View style={styles.sensorBadge}>
+                <SPIcon name="sunny" size={13} color={Colors.olive} />
+                <Text style={styles.sensorBadgeText}>Lighting: {currentAiGuide.light}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </AnimatedBottomSheet>
 
       {/* ── Capture Result Modal with Expansion Animation ────────────── */}
       <Modal
@@ -820,7 +1171,7 @@ export default function CameraScreen() {
               <SPCompareSlider
                 referenceUri={activePose.imageUrl}
                 capturedUri={capturedPhotoUri}
-                matchScore={realAiState.score > 0 ? realAiState.score : 94}
+                matchScore={postCaptureEvaluation?.totalScore ?? (realAiState.score > 0 ? realAiState.score : 0)}
                 containerWidth={SCREEN_WIDTH}
                 containerHeight={SCREEN_HEIGHT}
               />
@@ -839,7 +1190,7 @@ export default function CameraScreen() {
             <View style={styles.resultBadge}>
               <SPIcon name="sparkles" size={14} color="#FFF" strokeWidth={2.4} />
               <Text style={styles.resultBadgeText}>
-                Match: {realAiState.score > 0 ? `${realAiState.score}%` : '94%'}
+                Match: {postCaptureEvaluation?.totalScore ?? (realAiState.score > 0 ? realAiState.score : 0)}%
               </Text>
             </View>
 
@@ -887,6 +1238,56 @@ export default function CameraScreen() {
               <SPIcon name="close" size={18} color="#FFF" strokeWidth={2.4} />
             </AnimatedPressable>
           </View>
+
+          {/* Post-Capture Pose Accuracy Breakdown Card */}
+          {postCaptureEvaluation && (
+            <View style={styles.postCaptureAccuracyCard}>
+              <View style={styles.accuracyHeaderRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <SPIcon
+                    name={postCaptureEvaluation.isMatched ? 'sparkles' : 'alert'}
+                    size={16}
+                    color={postCaptureEvaluation.isMatched ? '#4CAF50' : '#FF8A00'}
+                  />
+                  <Text
+                    style={[
+                      styles.accuracyVerdictText,
+                      { color: postCaptureEvaluation.isMatched ? '#4CAF50' : '#FF8A00' },
+                    ]}
+                  >
+                    {postCaptureEvaluation.tierLabel} ({postCaptureEvaluation.totalScore}%)
+                  </Text>
+                </View>
+              </View>
+
+              {/* Regional breakdown grid */}
+              <View style={styles.accuracyRegionalGrid}>
+                {postCaptureEvaluation.regionalBreakdown.map((item) => (
+                  <View key={item.region} style={styles.accuracyRegionalItem}>
+                    <Text style={styles.accuracyRegionName}>{item.region}</Text>
+                    <Text
+                      style={[
+                        styles.accuracyRegionScore,
+                        { color: item.isMatched ? '#4CAF50' : '#FF8A00' },
+                      ]}
+                    >
+                      {item.isMatched ? '✓' : '•'} {item.score}%
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Actionable Tips */}
+              {postCaptureEvaluation.correctiveTips.length > 0 && !postCaptureEvaluation.isMatched && (
+                <View style={styles.accuracyTipsBox}>
+                  <Text style={styles.accuracyTipsTitle}>AI Adjustment Advice:</Text>
+                  {postCaptureEvaluation.correctiveTips.slice(0, 2).map((tip, idx) => (
+                    <Text key={idx} style={styles.accuracyTipText}>{tip}</Text>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Bottom Result Action Bar */}
           <Animated.View
@@ -1476,5 +1877,240 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: Typography.sizes.caption - 2,
     fontWeight: Typography.weights.medium,
+  },
+  activeDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: Colors.olive,
+  },
+  drawerContent: {
+    paddingBottom: Spacing.xl,
+  },
+  drawerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    color: '#FFF',
+    marginBottom: Spacing.md,
+  },
+  drawerSection: {
+    marginBottom: Spacing.lg,
+  },
+  drawerSectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    color: '#A3B899',
+    marginBottom: Spacing.xs + 2,
+    textTransform: 'uppercase',
+  },
+  drawerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  drawerPillBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.card,
+    backgroundColor: '#262628',
+    borderWidth: 1,
+    borderColor: '#38383A',
+    gap: 6,
+  },
+  drawerPillBtnActive: {
+    backgroundColor: Colors.olive,
+    borderColor: Colors.darkAccent,
+  },
+  drawerPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#AAA',
+  },
+  drawerPillTextActive: {
+    color: '#FFF',
+  },
+  drawerSettingsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  drawerSettingCard: {
+    width: (SCREEN_WIDTH - Spacing.md * 2 - 42) / 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.card,
+    backgroundColor: '#262628',
+    borderWidth: 1,
+    borderColor: '#38383A',
+    gap: 8,
+  },
+  drawerSettingTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  sensorBadge: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#262628',
+    borderWidth: 1,
+    borderColor: '#38383A',
+  },
+  sensorBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#D1D1D6',
+  },
+  /* Regional Live Scores */
+  regionalScoresRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 6,
+  },
+  regionalChip: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  regionalChipLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#AAA',
+    textTransform: 'uppercase',
+  },
+  regionalChipValue: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 1,
+  },
+  /* Reference Mode Switcher */
+  modeSwitcherContainer: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    borderRadius: 24,
+    padding: 3,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    gap: 4,
+  },
+  modeSwitchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 5,
+  },
+  modeSwitchPillActive: {
+    backgroundColor: Colors.olive,
+  },
+  modeSwitchText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    color: '#AAA',
+  },
+  modeSwitchTextActive: {
+    color: '#FFF',
+  },
+  /* Post-Capture Pose Accuracy Card */
+  postCaptureAccuracyCard: {
+    position: 'absolute',
+    bottom: 120,
+    left: Spacing.md,
+    right: Spacing.md,
+    backgroundColor: 'rgba(18, 22, 20, 0.94)',
+    borderRadius: 16,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+  },
+  accuracyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  accuracyVerdictText: {
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  accuracyRegionalGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  accuracyRegionalItem: {
+    width: (SCREEN_WIDTH - Spacing.md * 2 - Spacing.md * 2 - 12) / 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  accuracyRegionName: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#D1D1D6',
+  },
+  accuracyRegionScore: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  accuracyTipsBox: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  accuracyTipsTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#A3B899',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
+  accuracyTipText: {
+    fontSize: 11,
+    color: '#FFF',
+    lineHeight: 15,
   },
 });

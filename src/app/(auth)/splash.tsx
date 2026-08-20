@@ -34,15 +34,20 @@ import { mmkv } from '@/database/mmkv/mmkvClient';
 import { MMKV_KEYS } from '@/database/mmkv/keys';
 import { Colors, Spacing } from '@/constants/designTokens';
 import { MotionEasings } from '@/constants/motion';
+import { useAuthStore } from '@/stores/authStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 function navigateAfterSplash(): void {
   const onboardingDone = mmkv.getBoolean(MMKV_KEYS.ONBOARDING_COMPLETED);
-  if (onboardingDone === true) {
-    router.replace('/(tabs)');
-  } else {
+  const currentUser = useAuthStore.getState().user;
+
+  if (!onboardingDone) {
     router.replace('/(auth)/onboarding');
+  } else if (!currentUser) {
+    router.replace('/(auth)/sign-in');
+  } else {
+    router.replace('/(tabs)');
   }
 }
 

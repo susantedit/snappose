@@ -202,11 +202,21 @@ export const Typography = {
     xl: 24,
     xxl: 32,
   },
+  /**
+   * Standardized 3-tier typographic weight system:
+   *  - Headers & Titles: 700 (Bold)
+   *  - Subheaders & Labels: 500 (Medium)
+   *  - Body & Paragraphs: 400 (Regular)
+   */
   weights: {
-    regular: '400' as const,
-    medium: '500' as const,
-    semibold: '600' as const,
+    header: '700' as const,
+    subheader: '500' as const,
+    body: '400' as const,
+    // Canonical aliases
     bold: '700' as const,
+    medium: '500' as const,
+    regular: '400' as const,
+    semibold: '500' as const, // Mapped to subheader
   },
 } as const;
 

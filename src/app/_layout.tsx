@@ -19,6 +19,7 @@ const queryClient = new QueryClient({
 });
 
 import { initDatabase } from '@/database/sqlite/db';
+import { SPCookieConsentBanner } from '@/components/molecules/SPCookieConsentBanner';
 
 function InnerLayout() {
   const { theme } = useTheme();
@@ -74,10 +75,53 @@ function InnerLayout() {
             presentation: 'modal',
           }}
         />
+        <Stack.Screen
+          name="template/[id]"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen
+          name="template-creator/index"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="template/edit/[id]"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="profile/index"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen
+          name="journey/index"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen
+          name="templates/index"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}
+        />
         <Stack.Screen name="+not-found" />
       </Stack>
 
       <StatusBar style={theme.colors.statusBar} />
+      <SPCookieConsentBanner />
     </>
   );
 }

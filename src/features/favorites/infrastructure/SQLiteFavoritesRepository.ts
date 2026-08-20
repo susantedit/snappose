@@ -27,9 +27,45 @@ export class SQLiteFavoritesRepository implements FavoritesRepository {
     return { id, poseId, createdAt };
   }
 
+  async addBatch(poseIds: string[]): Promise<void> {
+    if (!poseIds.length) return;
+    const db = getDb();
+    const now = new Date().toISOString();
+    // Chunk in batches of 50 to avoid oversized SQL statements
+    const chunkSize = 50;
+    for (let i = 0; i < poseIds.length; i += chunkSize) {
+      const chunk = poseIds.slice(i, i + chunkSize);
+      const placeholders = chunk.map(() => '(?, ?, ?)').join(', ');
+      const params: string[] = [];
+      chunk.forEach((pId) => {
+        params.push(`fav_${pId}`, pId, now);
+      });
+      await db.runAsync(
+        `INSERT OR REPLACE INTO favorites (id, poseId, createdAt) VALUES ${placeholders}`,
+        params
+      );
+    }
+  }
+
   async remove(poseId: string): Promise<void> {
     const db = getDb();
     await db.runAsync('DELETE FROM favorites WHERE poseId = ?', [poseId]);
+  }
+
+  async removeBatch(poseIds: string[]): Promise<void> {
+    if (!poseIds.length) return;
+    const db = getDb();
+    const chunkSize = 100;
+    for (let i = 0; i < poseIds.length; i += chunkSize) {
+      const chunk = poseIds.slice(i, i + chunkSize);
+      const placeholders = chunk.map(() => '?').join(', ');
+      await db.runAsync(`DELETE FROM favorites WHERE poseId IN (${placeholders})`, chunk);
+    }
+  }
+
+  async removeAll(): Promise<void> {
+    const db = getDb();
+    await db.runAsync('DELETE FROM favorites');
   }
 
   async isFavorite(poseId: string): Promise<boolean> {

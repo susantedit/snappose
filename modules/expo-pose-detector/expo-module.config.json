@@ -1,0 +1,7 @@
+{
+  "name": "expo-pose-detector",
+  "platforms": ["android", "ios"],
+  "android": {
+    "modules": ["expo.modules.posedetector.ExpoPoseDetectorModule"]
+  }
+}

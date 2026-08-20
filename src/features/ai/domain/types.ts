@@ -115,3 +115,19 @@ export type ReferencePoseKey =
   | 'SEATED_CAFE'
   | 'MIRROR_SELFIE'
   | 'COUPLE_EMBRACE';
+
+// ---------------------------------------------------------------------------
+// Strict AI Detection Status Contract
+// ---------------------------------------------------------------------------
+
+export type AiDetectionStatus =
+  | 'REAL_LANDMARKS'      // Full body tracked with high confidence (single subject)
+  | 'NO_PERSON'           // No person detected in frame
+  | 'LOW_CONFIDENCE'      // Partial body / key joints obscured
+  | 'MULTIPLE_PEOPLE'     // Multiple people detected in frame (safety lockout)
+  | 'PROCESSING'          // Frame buffer is being analyzed
+  | 'FALLBACK_DISABLED'   // Fake/simulation fallback disabled; waiting for live stream
+  | 'UNINITIALISED'       // Engine not yet initialized
+  | 'FAILED';             // Inference error
+
+

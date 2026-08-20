@@ -63,6 +63,22 @@ export class ImageCacheService {
   }
 
   /**
+   * Prefetches an array of remote image URLs into disk cache in parallel.
+   */
+  async prefetchImages(remoteUrls: string[]): Promise<void> {
+    if (!remoteUrls || !remoteUrls.length) return;
+    const uniqueUrls = Array.from(new Set(remoteUrls.filter(Boolean)));
+    // Execute downloads in parallel with a concurrency cap of 4
+    const chunks: string[][] = [];
+    for (let i = 0; i < uniqueUrls.length; i += 4) {
+      chunks.push(uniqueUrls.slice(i, i + 4));
+    }
+    for (const chunk of chunks) {
+      await Promise.allSettled(chunk.map((url) => this.getLocalImageUri(url)));
+    }
+  }
+
+  /**
    * Clears the entire local image cache to free device storage.
    */
   async clearCache(): Promise<void> {

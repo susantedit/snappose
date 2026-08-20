@@ -41,6 +41,7 @@ import { MotionEasings, useReducedMotion } from '@/constants/motion';
 import { SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
 import { useFavorites } from '@/features/favorites/hooks/useFavorites';
 import { usePersonalizationStore } from '@/stores/personalizationStore';
+import { saveImageToGallery } from '@/utils/saveImage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_IMAGE_HEIGHT = SCREEN_WIDTH * 1.15;
@@ -158,6 +159,19 @@ export default function PoseDetailScreen() {
     [pose, recordExplicitFeedback, showToast],
   );
 
+  const handleSaveImage = useCallback(async () => {
+    if (!pose) return;
+    showToast({
+      message: 'Saving image to gallery...',
+      variant: 'info',
+    });
+    const result = await saveImageToGallery(pose.imageUrl, `snappose_${pose.categoryId}_${pose.id}`);
+    showToast({
+      message: result.message,
+      variant: result.success ? 'success' : 'error',
+    });
+  }, [pose, showToast]);
+
   const isDark = theme.mode === 'dark';
   const favorited = pose ? isFavorite(pose.id) : false;
 
@@ -198,6 +212,15 @@ export default function PoseDetailScreen() {
         </AnimatedPressable>
 
         <View style={styles.headerRightActions}>
+          <AnimatedPressable
+            onPress={handleSaveImage}
+            scaleTo={0.88}
+            style={styles.headerButtonCircle}
+            accessibilityLabel="Save image to gallery"
+          >
+            <SPIcon name="download" size={18} color="#FFFFFF" strokeWidth={2.2} />
+          </AnimatedPressable>
+
           <AnimatedPressable
             onPress={handleShare}
             scaleTo={0.88}
@@ -446,16 +469,34 @@ export default function PoseDetailScreen() {
           },
         ]}
       >
-        <AnimatedPressable
-          onPress={handleTryPoseInCamera}
-          scaleTo={0.96}
-          hapticFeedback="medium"
-          style={styles.ctaButton}
-          accessibilityLabel="Try this pose in camera"
-        >
-          <SPIcon name="camera" size={20} color="#FFFFFF" strokeWidth={2.4} />
-          <Text style={styles.ctaButtonText}>TRY THIS POSE</Text>
-        </AnimatedPressable>
+        <View style={styles.ctaRow}>
+          <AnimatedPressable
+            onPress={handleSaveImage}
+            scaleTo={0.93}
+            hapticFeedback="light"
+            style={[
+              styles.secondarySaveButton,
+              {
+                backgroundColor: isDark ? '#28282A' : '#EFEAE0',
+                borderColor: isDark ? '#3C3C40' : '#DED6C6',
+              },
+            ]}
+            accessibilityLabel="Save pose image to gallery"
+          >
+            <SPIcon name="download" size={19} color={isDark ? '#FFFFFF' : Colors.textPrimary} strokeWidth={2.2} />
+          </AnimatedPressable>
+
+          <AnimatedPressable
+            onPress={handleTryPoseInCamera}
+            scaleTo={0.96}
+            hapticFeedback="medium"
+            style={styles.ctaButton}
+            accessibilityLabel="Try this pose in camera"
+          >
+            <SPIcon name="camera" size={20} color="#FFFFFF" strokeWidth={2.4} />
+            <Text style={styles.ctaButtonText}>TRY THIS POSE</Text>
+          </AnimatedPressable>
+        </View>
       </Animated.View>
 
       <SPToast {...toastProps} />
@@ -636,8 +677,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     borderTopWidth: 1,
     zIndex: 30,
+  ctaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  secondarySaveButton: {
+    width: 52,
+    height: 52,
+    borderRadius: BorderRadius.button,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
   },
   ctaButton: {
+    flex: 1,
     backgroundColor: Colors.olive,
     flexDirection: 'row',
     alignItems: 'center',

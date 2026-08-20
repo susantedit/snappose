@@ -176,7 +176,7 @@ function SettingRow({
             {label}
           </Text>
           {subtitle && (
-            <Text style={[styles.rowSubtitle, { color: isDark ? '#888' : Colors.textSecondary }]}>
+            <Text style={[styles.rowSubtitle, { color: isDark ? '#D1D1D6' : Colors.textSecondary }]}>
               {subtitle}
             </Text>
           )}
@@ -380,7 +380,7 @@ export default function SettingsScreen() {
           entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(100)}
           style={styles.section}
         >
-          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#A3B899' : '#4F5B38' }]}>
             AI PERSONALIZATION & PRIVACY
           </Text>
           <View style={styles.sectionCards}>
@@ -413,7 +413,7 @@ export default function SettingsScreen() {
           entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(150)}
           style={styles.section}
         >
-          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#A3B899' : '#4F5B38' }]}>
             APPEARANCE & THEME
           </Text>
           <View style={styles.sectionCards}>
@@ -432,7 +432,7 @@ export default function SettingsScreen() {
           entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(200)}
           style={styles.section}
         >
-          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#A3B899' : '#4F5B38' }]}>
             CAMERA & POSE ASSIST
           </Text>
           <View style={styles.sectionCards}>
@@ -476,7 +476,7 @@ export default function SettingsScreen() {
           entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(250)}
           style={styles.section}
         >
-          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#A3B899' : '#4F5B38' }]}>
             OFFLINE STORAGE & CACHE
           </Text>
           <View style={styles.sectionCards}>
@@ -500,7 +500,7 @@ export default function SettingsScreen() {
           entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(275)}
           style={styles.section}
         >
-          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#A3B899' : '#4F5B38' }]}>
             NOTIFICATIONS & PERSONALITY
           </Text>
           <View style={styles.sectionCards}>
@@ -574,7 +574,7 @@ export default function SettingsScreen() {
           entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(285)}
           style={styles.section}
         >
-          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#A3B899' : '#4F5B38' }]}>
             PRIVACY & DATA CONTROLS
           </Text>
           <View style={styles.sectionCards}>
@@ -699,7 +699,7 @@ export default function SettingsScreen() {
           entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(300)}
           style={styles.section}
         >
-          <Text style={[styles.sectionTitle, { color: isDark ? '#888' : '#777' }]}>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#A3B899' : '#4F5B38' }]}>
             SUPPORT & LEGAL INFORMATION
           </Text>
           <View style={styles.sectionCards}>
@@ -747,7 +747,7 @@ export default function SettingsScreen() {
                 setModalContent({
                   title: 'Creator & Social Links',
                   body:
-                    'Created by Susant Luitel (Kantaraj Luitel)\n\n• GitHub: https://github.com/susantedit\n• YouTube: https://www.youtube.com/@developersusant\n• Instagram: https://instagram.com/susantgamerz\n• Facebook: https://facebook.com/Kantaraj.Luitel\n• LinkedIn: https://linkedin.com/in/kantaraj-luitel\n• Pinterest: https://pinterest.com/susantluitel\n• Reddit: https://reddit.com/user/Successful-Twist2608\n• TikTok: https://tiktok.com/@vortexeditz34\n• X (Twitter): https://x.com/Susantedit\n• CodePen: https://codepen.io/susant-gamerz\n• WhatsApp: https://wa.me/9779708838261\n• Email: susantedit@gmail.com',
+                    'Created by Susant Luitel (Kantaraj Luitel)\n\n• GitHub: https://github.com/susantedit\n• Instagram: https://instagram.com/susantgamerz\n• Facebook: https://facebook.com/Kantaraj.Luitel\n• LinkedIn: https://linkedin.com/in/kantaraj-luitel\n• Pinterest: https://pinterest.com/susantluitel\n• Reddit: https://reddit.com/user/Successful-Twist2608\n• TikTok: https://tiktok.com/@vortexeditz34\n• X (Twitter): https://x.com/Susantedit\n• CodePen: https://codepen.io/susant-gamerz\n• WhatsApp: https://wa.me/9779708838261\n• Email: susantedit@gmail.com',
                 })
               }
             />
@@ -884,14 +884,15 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   section: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.xxl,
   },
   sectionTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    marginBottom: Spacing.xs + 2,
-    marginLeft: 4,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: Spacing.sm,
+    marginLeft: 6,
+    textTransform: 'uppercase',
   },
   sectionCards: {
     borderRadius: BorderRadius.card,

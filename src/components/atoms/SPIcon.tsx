@@ -159,7 +159,11 @@ export const ICON_REGISTRY: Record<string, LucideIcon> = {
   editors: Award,
   star: Star,
 
-  // Directions
+  // Directions & Back Navigation
+  back: ArrowLeft,
+  'arrow-back': ArrowLeft,
+  'chevron-left': ArrowLeft,
+  chevronLeft: ArrowLeft,
   arrowLeft: ArrowLeft,
   arrowRight: ArrowRight,
   arrowUp: ArrowUp,

@@ -1,5 +1,5 @@
 /**
- * Tabs Layout — Glassmorphism bottom navigation bar with elevated Olive Camera FAB.
+ * Tabs Layout — Floating glassmorphic bottom navigation bar with POSEHANUM branding.
  * Features ultra-crisp SVG icons, active glow indicators, and Reanimated spring physics.
  */
 
@@ -14,55 +14,22 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useTheme } from '@/constants/theme';
-import { Colors, Layout, Typography, AnimationDurations } from '@/constants/designTokens';
+import { Colors, AnimationDurations } from '@/constants/designTokens';
 import { SPIcon } from '@/components/atoms/SPIcon';
 
 interface TabItemConfig {
-  name: 'index' | 'search' | 'camera' | 'favorites' | 'settings';
+  name: 'camera' | 'index' | 'favorites' | 'settings' | 'search';
   label: string;
   icon: string;
   activeIcon: string;
-  isCamera?: boolean;
 }
 
 const TAB_ITEMS: TabItemConfig[] = [
-  { name: 'index', label: 'Home', icon: 'home', activeIcon: 'home' },
-  { name: 'search', label: 'Search', icon: 'search', activeIcon: 'search' },
-  { name: 'camera', label: 'Camera', icon: 'camera', activeIcon: 'camera', isCamera: true },
-  { name: 'favorites', label: 'Favorites', icon: 'heart', activeIcon: 'heart-filled' },
-  { name: 'settings', label: 'Settings', icon: 'settings', activeIcon: 'settings' },
+  { name: 'camera', label: 'Camera', icon: 'camera', activeIcon: 'camera' },
+  { name: 'index', label: 'References', icon: 'grid', activeIcon: 'grid' },
+  { name: 'favorites', label: 'My Shots', icon: 'gallery', activeIcon: 'gallery' },
+  { name: 'settings', label: 'Profile', icon: 'portrait', activeIcon: 'portrait' },
 ];
-
-function CameraFAB({ focused }: { focused: boolean }) {
-  const scale = useSharedValue(1);
-
-  React.useEffect(() => {
-    scale.value = withSpring(focused ? 1.06 : 1, { damping: 12, stiffness: 220 });
-  }, [focused, scale]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <View style={styles.fabContainer}>
-      <Animated.View
-        style={[
-          styles.fab,
-          {
-            backgroundColor: Colors.olive,
-            shadowColor: Colors.olive,
-            borderWidth: focused ? 3 : 2,
-            borderColor: focused ? '#FFFFFF' : 'rgba(255,255,255,0.4)',
-          },
-          animatedStyle,
-        ]}
-      >
-        <SPIcon name="camera" size={26} color="#FFFFFF" strokeWidth={2.2} />
-      </Animated.View>
-    </View>
-  );
-}
 
 interface TabButtonProps {
   item: TabItemConfig;
@@ -76,7 +43,7 @@ function TabButton({ item, isFocused, activeColor, inactiveColor, onPress }: Tab
   const scale = useSharedValue(1);
 
   const handlePressIn = () => {
-    scale.value = withTiming(0.88, { duration: AnimationDurations.quick });
+    scale.value = withTiming(0.9, { duration: AnimationDurations.quick });
   };
 
   const handlePressOut = () => {
@@ -101,67 +68,97 @@ function TabButton({ item, isFocused, activeColor, inactiveColor, onPress }: Tab
       accessibilityState={{ selected: isFocused }}
     >
       <Animated.View style={[styles.tabContent, animatedStyle]}>
-        <View style={styles.tabIconContainer}>
+        <View
+          style={[
+            styles.tabIconWrap,
+            isFocused && styles.tabIconWrapActive,
+          ]}
+        >
           <SPIcon
             name={iconName}
-            size={20}
-            color={color}
-            fill={item.name === 'favorites' && isFocused ? Colors.error : undefined}
-            strokeWidth={isFocused ? 2.4 : 1.9}
+            size={18}
+            color={isFocused ? '#FFFFFF' : color}
+            strokeWidth={isFocused ? 2.4 : 1.8}
           />
         </View>
         <Text
           style={[
             styles.tabLabel,
             {
-              color,
+              color: isFocused ? activeColor : color,
               fontWeight: isFocused ? '700' : '500',
             },
           ]}
         >
           {item.label}
         </Text>
-        {isFocused && <View style={[styles.activePill, { backgroundColor: activeColor }]} />}
       </Animated.View>
     </Pressable>
   );
 }
 
-function GlassTabBar({ state, navigation }: any) {
+import { useUiVisibilityStore } from '@/stores/uiVisibilityStore';
+
+function FloatingGlassTabBar({ state, navigation }: any) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = Layout.bottomNavHeight + insets.bottom;
+  const isCapturing = useUiVisibilityStore((s) => s.isCapturing);
 
+  const translateY = useSharedValue(0);
+  const opacity = useSharedValue(1);
+
+  React.useEffect(() => {
+    if (isCapturing) {
+      translateY.value = withTiming(110, { duration: 250 });
+      opacity.value = withTiming(0, { duration: 200 });
+    } else {
+      translateY.value = withSpring(0, { damping: 15, stiffness: 180 });
+      opacity.value = withTiming(1, { duration: 250 });
+    }
+  }, [isCapturing, translateY, opacity]);
+
+  const animatedContainerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    opacity: opacity.value,
+  }));
+
+  const isDark = theme.mode === 'dark';
   const activeColor = Colors.olive;
-  const inactiveColor =
-    theme.mode === 'dark' ? 'rgba(255,255,255,0.45)' : 'rgba(40,40,40,0.5)';
+  const inactiveColor = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(44, 48, 38, 0.58)';
 
-  const glassBackground =
-    theme.mode === 'dark'
-      ? 'rgba(24,24,24,0.92)'
-      : 'rgba(246,241,231,0.94)';
-  const glassBorder =
-    theme.mode === 'dark'
-      ? 'rgba(255,255,255,0.08)'
-      : 'rgba(101,116,74,0.2)';
+  const glassBackground = isDark
+    ? 'rgba(22, 24, 20, 0.88)'
+    : 'rgba(246, 241, 231, 0.90)';
+  const glassBorder = isDark
+    ? 'rgba(255, 255, 255, 0.12)'
+    : 'rgba(101, 116, 74, 0.22)';
 
   return (
-    <View
+    <Animated.View
       style={[
-        styles.tabBarWrapper,
+        styles.floatingContainer,
         {
-          height: tabBarHeight,
-          backgroundColor: glassBackground,
-          borderTopColor: glassBorder,
+          bottom: Math.max(insets.bottom, 12),
         },
+        animatedContainerStyle,
       ]}
+      pointerEvents={isCapturing ? 'none' : 'box-none'}
     >
-      <View style={[styles.tabBarInner, { paddingBottom: insets.bottom }]}>
-        {TAB_ITEMS.map((tab, tabIndex) => {
-          const isFocused = state.index === tabIndex;
+      <View
+        style={[
+          styles.tabBarPill,
+          {
+            backgroundColor: glassBackground,
+            borderColor: glassBorder,
+          },
+        ]}
+      >
+        {TAB_ITEMS.map((tab) => {
+          const routeIndex = state.routes.findIndex((r: any) => r.name === tab.name);
+          const isFocused = state.index === routeIndex;
 
           const onPress = () => {
-            if (tab.isCamera) {
+            if (tab.name === 'camera') {
               router.navigate('/(tabs)/camera');
               return;
             }
@@ -175,21 +172,6 @@ function GlassTabBar({ state, navigation }: any) {
             }
           };
 
-          if (tab.isCamera) {
-            return (
-              <Pressable
-                key={tab.name}
-                onPress={onPress}
-                style={styles.cameraTabButton}
-                accessibilityRole="button"
-                accessibilityLabel="Open Camera"
-                accessibilityState={{ selected: isFocused }}
-              >
-                <CameraFAB focused={isFocused} />
-              </Pressable>
-            );
-          }
-
           return (
             <TabButton
               key={tab.name}
@@ -202,7 +184,7 @@ function GlassTabBar({ state, navigation }: any) {
           );
         })}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -210,21 +192,11 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{ headerShown: false }}
-      tabBar={(props: any) => (
-        <GlassTabBar
-          state={props.state}
-          descriptors={props.descriptors}
-          navigation={props.navigation}
-        />
-      )}
+      tabBar={(props: any) => <FloatingGlassTabBar {...props} />}
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Home', tabBarAccessibilityLabel: 'Home tab' }}
-      />
-      <Tabs.Screen
-        name="search"
-        options={{ title: 'Search', tabBarAccessibilityLabel: 'Search tab' }}
+        options={{ title: 'References', tabBarAccessibilityLabel: 'References tab' }}
       />
       <Tabs.Screen
         name="camera"
@@ -232,95 +204,77 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="favorites"
-        options={{ title: 'Favorites', tabBarAccessibilityLabel: 'Favorites tab' }}
+        options={{ title: 'My Shots', tabBarAccessibilityLabel: 'My Shots tab' }}
       />
       <Tabs.Screen
         name="settings"
-        options={{ title: 'Settings', tabBarAccessibilityLabel: 'Settings tab' }}
+        options={{ title: 'Profile', tabBarAccessibilityLabel: 'Profile tab' }}
+      />
+      <Tabs.Screen
+        name="search"
+        options={{
+          href: null,
+          title: 'Search',
+        }}
       />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
-  tabBarWrapper: {
+  floatingContainer: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    overflow: 'visible',
-    elevation: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100,
   },
-  tabBarInner: {
-    flex: 1,
+  tabBarPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
+    width: '100%',
+    maxWidth: 420,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+    ...Platform.select({
+      web: {
+        backdropFilter: 'blur(20px)',
+      },
+    }),
   },
   tabButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: Layout.bottomNavHeight,
-    minHeight: Layout.minTouchTarget,
+    height: '100%',
   },
   tabContent: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    gap: 2,
   },
-  tabIconContainer: {
-    height: 22,
+  tabIconWrap: {
+    width: 32,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tabIconWrapActive: {
+    backgroundColor: Colors.olive,
   },
   tabLabel: {
-    fontSize: Typography.sizes.caption,
-    lineHeight: 14,
-  },
-  activePill: {
-    width: 14,
-    height: 3,
-    borderRadius: 2,
-    marginTop: 2,
-  },
-  cameraTabButton: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: Layout.bottomNavHeight,
-    overflow: 'visible',
-  },
-  fabContainer: {
-    marginTop: -22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'visible',
-  },
-  fab: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 8,
-    ...Platform.select({
-      ios: {
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.35,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 8,
-      },
-      web: {
-        boxShadow: '0 4px 14px rgba(101, 116, 74, 0.45)',
-      },
-    }),
+    fontSize: 10,
+    lineHeight: 12,
+    letterSpacing: 0.2,
   },
 });
