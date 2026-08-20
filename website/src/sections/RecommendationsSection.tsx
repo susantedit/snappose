@@ -6,6 +6,7 @@ import { Sparkles, ArrowRight } from 'lucide-react';
 import Image from 'next/image';
 
 const SCENES = [
+  { id: 'couple', label: '💑 Couple & Romantic' },
   { id: 'mountain', label: '🏔 Mountain' },
   { id: 'cafe', label: '☕ Cafe' },
   { id: 'beach', label: '🌊 Beach' },
@@ -21,6 +22,11 @@ const OUTFITS = [
 ];
 
 const GENERATED_POSES: Record<string, { title: string; image: string; tag: string }[]> = {
+  couple: [
+    { title: 'Golden Duo Stride', image: '/IMG_20260818_112337.jpg', tag: 'Couple Stance' },
+    { title: 'Sunset Silhouette Embrace', image: 'https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?w=800&auto=format&fit=crop&q=80', tag: 'Duo' },
+    { title: 'Forehead Touch Chemistry', image: 'https://images.unsplash.com/photo-1529333166437-7750a6dd5a70?w=800&auto=format&fit=crop&q=80', tag: 'Romantic' },
+  ],
   mountain: [
     { title: 'Summit Stride', image: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&auto=format&fit=crop&q=80', tag: 'Standing' },
     { title: 'Panoramic Ridge Look', image: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=800&auto=format&fit=crop&q=80', tag: 'Candid' },

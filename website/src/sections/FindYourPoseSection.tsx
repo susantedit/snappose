@@ -10,9 +10,60 @@ const VIBES = ['Aesthetic', 'Casual', 'Luxury', 'Adventure', 'Streetwear', 'Roma
 const OUTFITS = ['Casual Fit', 'Formal Suit / Dress', 'Streetwear Jacket', 'Summer Linen', 'Traditional Attire'];
 
 export function FindYourPoseSection() {
-  const [selectedLoc, setSelectedLoc] = useState('Mountain');
-  const [selectedVibe, setSelectedVibe] = useState('Adventure');
+  const [selectedLoc, setSelectedLoc] = useState('City & Street');
+  const [selectedVibe, setSelectedVibe] = useState('Romantic');
   const [selectedOutfit, setSelectedOutfit] = useState('Casual Fit');
+
+  const getPoseResult = () => {
+    if (selectedVibe === 'Romantic') {
+      return {
+        title: 'The Golden Romantic Duo',
+        image: '/IMG_20260818_112337.jpg',
+        match: '99% MATCH RATING',
+        description: `Tailored couple posture with warm atmospheric lighting and synchronized head-to-shoulder connection.`,
+      };
+    }
+    if (selectedLoc === 'Mountain') {
+      return {
+        title: 'The Summit Stride',
+        image: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&auto=format&fit=crop&q=80',
+        match: '98% MATCH RATING',
+        description: `Tailored for ${selectedOutfit.toLowerCase()} in mountain panoramic lighting with a relaxed 3/4 turn.`,
+      };
+    }
+    if (selectedLoc === 'Cafe') {
+      return {
+        title: 'Window Table Lean',
+        image: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=800&auto=format&fit=crop&q=80',
+        match: '96% MATCH RATING',
+        description: `Cozy indoor lifestyle composition with aesthetic forearm framing.`,
+      };
+    }
+    if (selectedLoc === 'Beach') {
+      return {
+        title: 'Golden Hour Shoreline',
+        image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80',
+        match: '97% MATCH RATING',
+        description: `Spontaneous ocean breeze stance with warm low-sun silhouette angles.`,
+      };
+    }
+    if (selectedLoc === 'City & Street') {
+      return {
+        title: 'Urban Crosswalk Motion',
+        image: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=800&auto=format&fit=crop&q=80',
+        match: '98% MATCH RATING',
+        description: `Dynamic architectural wall lean suited for streetwear and city energy.`,
+      };
+    }
+    return {
+      title: 'Forest Pathway Wander',
+      image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=800&auto=format&fit=crop&q=80',
+      match: '95% MATCH RATING',
+      description: `Tranquil organic posture framed by soft sunlit foliage.`,
+    };
+  };
+
+  const result = getPoseResult();
 
   return (
     <section className="relative py-32 bg-background overflow-hidden">
@@ -110,15 +161,15 @@ export function FindYourPoseSection() {
             >
               <div className="relative aspect-[3/4] w-full rounded-2xl overflow-hidden mb-4">
                 <Image
-                  src="https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&auto=format&fit=crop&q=80"
-                  alt="Recommended Pose Preview"
+                  src={result.image}
+                  alt={result.title}
                   fill
                   sizes="(max-width: 768px) 100vw, 384px"
                   className="object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0A0E0C] via-transparent to-transparent" />
                 <span className="absolute top-3 left-3 px-3 py-1 rounded-full bg-[#0A0E0C]/80 backdrop-blur-md text-[10px] font-black uppercase text-primary border border-primary/30">
-                  98% MATCH RATING
+                  {result.match}
                 </span>
               </div>
 
@@ -127,10 +178,10 @@ export function FindYourPoseSection() {
                   {selectedLoc} • {selectedVibe}
                 </div>
                 <h4 className="text-xl font-black text-textPrimary uppercase mt-1">
-                  The Summit Stride
+                  {result.title}
                 </h4>
                 <p className="text-xs text-textSecondary mt-1 leading-relaxed">
-                  Tailored for {selectedOutfit.toLowerCase()} in {selectedLoc.toLowerCase()} lighting with a relaxed 3/4 turn.
+                  {result.description}
                 </p>
 
                 <a

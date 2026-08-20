@@ -84,7 +84,7 @@ export const SNAP_POSE_CATEGORIES: CategoryItem[] = [
     id: 'couple',
     name: 'Couple & Romance',
     subtitle: 'Intimate embraces, forehead leans & playful candid chemistry',
-    image: 'https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?w=800&auto=format&fit=crop&q=80',
+    image: '/IMG_20260818_112337.jpg',
     totalPoses: 25,
     tags: ['duo', 'intimate', 'connection', 'romantic'],
   },
