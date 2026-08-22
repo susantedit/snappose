@@ -118,7 +118,7 @@ export default function DataRetentionPage() {
             <div className="p-6 rounded-2xl bg-surface border border-surfaceBorder space-y-2">
               <h3 className="font-bold text-textPrimary text-base">Web Request Portal</h3>
               <p className="text-sm text-textSecondary">
-                If you have uninstalled the application, submit your deletion request online at <Link href="/delete-account" className="text-primary underline">posehanum.app/delete-account</Link> for permanent cloud purge.
+                If you have uninstalled the application, submit your deletion request online at <Link href="/delete-account" className="text-primary underline">www.posehanum.tech/delete-account</Link> for permanent cloud purge.
               </p>
             </div>
           </div>

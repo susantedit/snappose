@@ -19,9 +19,9 @@ export const BRAND_CONFIG = {
   buildNumber: 1,
 
   urls: {
-    website: 'https://posehanum.app',
-    privacyPolicy: 'https://posehanum.app/privacy',
-    termsOfService: 'https://posehanum.app/terms',
+    website: 'https://www.posehanum.tech',
+    privacyPolicy: 'https://www.posehanum.tech/privacy',
+    termsOfService: 'https://www.posehanum.tech/terms',
     googlePlay: 'https://play.google.com/store/apps/details?id=com.example.snappose',
     feedbackEmail: 'susantedit@gmail.com',
   },

@@ -90,7 +90,7 @@ export default function TermsOfServicePage() {
             5. Account Deletion & Termination
           </h2>
           <p className="text-textSecondary text-sm sm:text-base leading-relaxed">
-            You may terminate these terms at any time by uninstalling the application and deleting your account via <em>Settings &rarr; Privacy & Data Controls &rarr; Delete Account</em> or online at <Link href="/delete-account" className="text-primary underline">posehanum.app/delete-account</Link>.
+            You may terminate these terms at any time by uninstalling the application and deleting your account via <em>Settings &rarr; Privacy & Data Controls &rarr; Delete Account</em> or online at <Link href="/delete-account" className="text-primary underline">www.posehanum.tech/delete-account</Link>.
           </p>
         </section>
 

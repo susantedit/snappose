@@ -789,7 +789,7 @@ export default function SettingsScreen() {
                 setModalContent({
                   title: 'Privacy Policy Summary',
                   body:
-                    'POSEHANUM is built with a Privacy-First Architecture:\n\n1. Camera Feed: All pose detection and skeletal landmark tracking runs 100% locally on your device hardware. Raw camera video frames are NEVER uploaded or saved.\n\n2. Photos & Media: Captured photos and custom poses are saved only to your device or explicitly chosen local storage.\n\n3. Machine Learning: Personalization runs entirely on-device and is never shared with third-party data brokers.\n\nFull policy available at: https://posehanum.app/privacy',
+                    'POSEHANUM is built with a Privacy-First Architecture:\n\n1. Camera Feed: All pose detection and skeletal landmark tracking runs 100% locally on your device hardware. Raw camera video frames are NEVER uploaded or saved.\n\n2. Photos & Media: Captured photos and custom poses are saved only to your device or explicitly chosen local storage.\n\n3. Machine Learning: Personalization runs entirely on-device and is never shared with third-party data brokers.\n\nFull policy available at: https://www.posehanum.tech/privacy',
                 })
               }
             />
@@ -801,7 +801,7 @@ export default function SettingsScreen() {
                 setModalContent({
                   title: 'Terms of Service Summary',
                   body:
-                    'Welcome to POSEHANUM. By using our application, you agree to:\n\n• Use the pose guidance responsibly and safely in appropriate physical environments.\n• Maintain ownership and rights over any photos you capture.\n• Respect safety recommendations regarding camera distance and physical posture.\n\nFull terms available at: https://posehanum.app/terms',
+                    'Welcome to POSEHANUM. By using our application, you agree to:\n\n• Use the pose guidance responsibly and safely in appropriate physical environments.\n• Maintain ownership and rights over any photos you capture.\n• Respect safety recommendations regarding camera distance and physical posture.\n\nFull terms available at: https://www.posehanum.tech/terms',
                 })
               }
             />

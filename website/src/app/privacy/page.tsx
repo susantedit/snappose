@@ -115,7 +115,7 @@ export default function PrivacyPolicyPage() {
             <ul className="list-disc pl-6 space-y-2">
               <li><strong>Data Export:</strong> Export your full personal data bundle in standardized JSON format anytime via <em>Settings &rarr; Privacy & Data Controls &rarr; Export My Data</em>.</li>
               <li><strong>In-App Account & Data Deletion:</strong> Instantly wipe your account, favorites, custom poses, attempt history, and personalization profile via <em>Settings &rarr; Privacy & Data Controls &rarr; Delete Account & All Data</em>.</li>
-              <li><strong>Web Deletion Portal:</strong> If you uninstalled the app, you can submit an account deletion request online at <Link href="/delete-account" className="text-primary underline">posehanum.app/delete-account</Link>.</li>
+              <li><strong>Web Deletion Portal:</strong> If you uninstalled the app, you can submit an account deletion request online at <Link href="/delete-account" className="text-primary underline">www.posehanum.tech/delete-account</Link>.</li>
             </ul>
           </div>
         </section>
@@ -142,7 +142,7 @@ export default function PrivacyPolicyPage() {
             <p><strong>Developer:</strong> Susant Luitel (Kantaraj Luitel)</p>
             <p><strong>App:</strong> POSEHANUM</p>
             <p><strong>Privacy Contact Email:</strong> <a href="mailto:susantedit@gmail.com" className="text-primary underline">susantedit@gmail.com</a></p>
-            <p><strong>Website:</strong> <a href="https://posehanum.app" className="text-primary underline">https://posehanum.app</a></p>
+            <p><strong>Website:</strong> <a href="https://www.posehanum.tech" className="text-primary underline">https://www.posehanum.tech</a></p>
           </div>
         </section>
       </div>
