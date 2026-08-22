@@ -11,6 +11,7 @@ if (expoModulesCorePlugin.exists()) {
 }
 
 android {
+  namespace "expo.modules.posedetector"
   compileSdkVersion rootProject.ext.has('compileSdkVersion') ? rootProject.ext.get('compileSdkVersion') : 34
 
   defaultConfig {

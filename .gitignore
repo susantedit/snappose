@@ -22,8 +22,7 @@ backend/dist/
 *.key
 *.mobileprovision
 
-# Google services (contains secrets)
-google-services.json
+# Google services
 GoogleService-Info.plist
 
 # Generated
@@ -32,9 +31,6 @@ expo-env.d.ts
 # OS
 .DS_Store
 Thumbs.db
-
-# EAS
-eas.json
 
 # Test coverage
 coverage/

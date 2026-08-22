@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "115860319222",
+    "project_id": "snap-pose-c16f4",
+    "storage_bucket": "snap-pose-c16f4.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:115860319222:android:b16000ebd7deeb432d75d7",
+        "android_client_info": {
+          "package_name": "com.snappose.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC_7gMLSA2-OoAUgmtSQA9GHTgbFbfHWrE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
