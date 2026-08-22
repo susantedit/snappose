@@ -1,117 +1,147 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
+import { withProjectBuildGradle } from 'expo/config-plugins';
 import fs from 'fs';
 
 const hasGoogleServices = fs.existsSync('./google-services.json');
+const admobAppId = process.env.EXPO_PUBLIC_ADMOB_APP_ID || 'ca-app-pub-3940256099942544~3347511713';
 
-export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> => ({
-  ...config,
-  name: 'POSEHANUM',
-  slug: 'posehanum',
-  version: '1.0.0',
-  orientation: 'portrait',
-  icon: './assets/icon.png',
-  userInterfaceStyle: 'automatic',
-  splash: {
-    image: './assets/splash.png',
-    resizeMode: 'contain',
-    backgroundColor: '#F6F1E7',
-  },
-  scheme: 'posehanum',
-  assetBundlePatterns: ['**/*'],
-  ios: {
-    supportsTablet: false,
-    bundleIdentifier: 'com.snappose.app',
-    infoPlist: {
-      NSCameraUsageDescription:
-        'POSEHANUM needs camera access to overlay pose guides and capture photos.',
-      NSMicrophoneUsageDescription:
-        'POSEHANUM needs microphone access for voice-guided coaching.',
-      NSPhotoLibraryUsageDescription:
-        'POSEHANUM saves captured photos to your photo library.',
-      NSPhotoLibraryAddUsageDescription:
-        'POSEHANUM saves captured photos to your photo library.',
-    },
-  },
-  android: {
-    package: 'com.snappose.app',
-    versionCode: 1,
-    adaptiveIcon: {
-      foregroundImage: './assets/adaptive-icon.png',
+const withPlayServicesAdsFix = (config: ExpoConfig): ExpoConfig => {
+  return withProjectBuildGradle(config, (gradleConfig) => {
+    if (gradleConfig.modResults.language === 'groovy') {
+      const forceDep = `
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force 'com.google.android.gms:play-services-ads:23.6.0'
+        }
+    }
+}
+`;
+      if (!gradleConfig.modResults.contents.includes('play-services-ads:23.6.0')) {
+        gradleConfig.modResults.contents += forceDep;
+      }
+    }
+    return gradleConfig;
+  });
+};
+
+export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> =>
+  withPlayServicesAdsFix({
+    ...config,
+    name: 'POSEHANUM',
+    slug: 'posehanum',
+    version: '1.0.0',
+    orientation: 'portrait',
+    icon: './assets/icon.png',
+    userInterfaceStyle: 'automatic',
+    splash: {
+      image: './assets/splash.png',
+      resizeMode: 'contain',
       backgroundColor: '#F6F1E7',
     },
-    permissions: [
-      'android.permission.CAMERA',
-      'android.permission.READ_MEDIA_IMAGES',
-      'android.permission.READ_MEDIA_VIDEO',
-      'android.permission.READ_MEDIA_AUDIO',
-      'android.permission.READ_EXTERNAL_STORAGE',
-      'android.permission.WRITE_EXTERNAL_STORAGE',
-      'android.permission.RECORD_AUDIO',
-      'android.permission.VIBRATE',
-      'android.permission.INTERNET',
-      'android.permission.ACCESS_NETWORK_STATE',
-      'android.permission.RECEIVE_BOOT_COMPLETED',
-    ],
-    googleServicesFile: hasGoogleServices ? './google-services.json' : undefined,
-  },
-  web: {
-    bundler: 'metro',
-    output: 'single',
-    favicon: './assets/favicon.png',
-  },
-  plugins: [
-    'expo-router',
-    [
-      'expo-camera',
-      {
-        cameraPermission:
-          'Allow Snap Pose to access your camera to overlay pose guides and capture photos.',
-        microphonePermission:
-          'Allow Snap Pose to access your microphone for video capture.',
-        recordAudioAndroid: true,
+    scheme: 'posehanum',
+    assetBundlePatterns: ['**/*'],
+    ios: {
+      supportsTablet: false,
+      bundleIdentifier: 'com.snappose.app',
+      infoPlist: {
+        NSCameraUsageDescription:
+          'POSEHANUM needs camera access to overlay pose guides and capture photos.',
+        NSMicrophoneUsageDescription:
+          'POSEHANUM needs microphone access for voice-guided coaching.',
+        NSPhotoLibraryUsageDescription:
+          'POSEHANUM saves captured photos to your photo library.',
+        NSPhotoLibraryAddUsageDescription:
+          'POSEHANUM saves captured photos to your photo library.',
       },
-    ],
-    [
-      'expo-media-library',
-      {
-        photosPermission:
-          'Allow Snap Pose to save captured photos to your photo library.',
-        savePhotosPermission:
-          'Allow Snap Pose to save captured photos to your photo library.',
-        audioPermission:
-          'Allow Snap Pose to access audio.',
-        isAccessMediaLocationEnabled: true,
-      },
-    ],
-    [
-      'expo-build-properties',
-      {
-        android: {
-          minSdkVersion: 26,
-          compileSdkVersion: 34,
-          targetSdkVersion: 34,
-          buildToolsVersion: '34.0.0',
-        },
-      },
-    ],
-    ...(hasGoogleServices
-      ? ['@react-native-firebase/app', '@react-native-firebase/crashlytics']
-      : []),
-  ],
-  'react-native-google-mobile-ads': {
-    android_app_id: process.env.EXPO_PUBLIC_ADMOB_APP_ID,
-    ios_app_id: process.env.EXPO_PUBLIC_ADMOB_APP_ID,
-  },
-  experiments: {
-    typedRoutes: true,
-  },
-  owner: 'susant11',
-  extra: {
-    mongodbApiUrl: process.env.EXPO_PUBLIC_MONGODB_API_URL,
-    admobAppId: process.env.EXPO_PUBLIC_ADMOB_APP_ID,
-    eas: {
-      projectId: '7d89ac95-b79b-47ba-97fd-eef5bf30f5c9',
     },
-  },
-});
+    android: {
+      package: 'com.snappose.app',
+      versionCode: 1,
+      adaptiveIcon: {
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundColor: '#F6F1E7',
+      },
+      permissions: [
+        'android.permission.CAMERA',
+        'android.permission.READ_MEDIA_IMAGES',
+        'android.permission.READ_MEDIA_VIDEO',
+        'android.permission.READ_MEDIA_AUDIO',
+        'android.permission.READ_EXTERNAL_STORAGE',
+        'android.permission.WRITE_EXTERNAL_STORAGE',
+        'android.permission.RECORD_AUDIO',
+        'android.permission.VIBRATE',
+        'android.permission.INTERNET',
+        'android.permission.ACCESS_NETWORK_STATE',
+        'android.permission.RECEIVE_BOOT_COMPLETED',
+      ],
+      googleServicesFile: hasGoogleServices ? './google-services.json' : undefined,
+    },
+    web: {
+      bundler: 'metro',
+      output: 'single',
+      favicon: './assets/favicon.png',
+    },
+    plugins: [
+      'expo-router',
+      [
+        'expo-camera',
+        {
+          cameraPermission:
+            'Allow Snap Pose to access your camera to overlay pose guides and capture photos.',
+          microphonePermission:
+            'Allow Snap Pose to access your microphone for video capture.',
+          recordAudioAndroid: true,
+        },
+      ],
+      [
+        'expo-media-library',
+        {
+          photosPermission:
+            'Allow Snap Pose to save captured photos to your photo library.',
+          savePhotosPermission:
+            'Allow Snap Pose to save captured photos to your photo library.',
+          audioPermission:
+            'Allow Snap Pose to access audio.',
+          isAccessMediaLocationEnabled: true,
+        },
+      ],
+      [
+        'expo-build-properties',
+        {
+          android: {
+            minSdkVersion: 26,
+            compileSdkVersion: 34,
+            targetSdkVersion: 34,
+            buildToolsVersion: '34.0.0',
+          },
+        },
+      ],
+      [
+        'react-native-google-mobile-ads',
+        {
+          androidAppId: admobAppId,
+          iosAppId: admobAppId,
+        },
+      ],
+      ...(hasGoogleServices
+        ? ['@react-native-firebase/app', '@react-native-firebase/crashlytics']
+        : []),
+    ],
+    'react-native-google-mobile-ads': {
+      android_app_id: admobAppId,
+      ios_app_id: admobAppId,
+    },
+    experiments: {
+      typedRoutes: true,
+    },
+    owner: 'susant11',
+    extra: {
+      mongodbApiUrl: process.env.EXPO_PUBLIC_MONGODB_API_URL,
+      admobAppId: admobAppId,
+      eas: {
+        projectId: '7d89ac95-b79b-47ba-97fd-eef5bf30f5c9',
+      },
+    },
+  });
 
