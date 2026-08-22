@@ -105,25 +105,13 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> => 
   experiments: {
     typedRoutes: true,
   },
-  // EAS Update — OTA JS-layer delivery
-  updates: {
-    url: 'https://u.expo.dev/YOUR_EAS_PROJECT_ID',
-    enabled: true,
-    // 'fingerprint' ties the OTA bundle to the exact native build fingerprint,
-    // preventing mismatched JS from loading on incompatible native code.
-    checkAutomatically: 'ON_LOAD',
-    fallbackToCacheTimeout: 0,
-  },
-  runtimeVersion: {
-    policy: 'fingerprint',
-  },
+  owner: 'susant11',
   extra: {
     mongodbApiUrl: process.env.EXPO_PUBLIC_MONGODB_API_URL,
     admobAppId: process.env.EXPO_PUBLIC_ADMOB_APP_ID,
     eas: {
-      projectId: 'YOUR_EAS_PROJECT_ID',
+      projectId: '7d89ac95-b79b-47ba-97fd-eef5bf30f5c9',
     },
   },
-  owner: 'snappose',
 });
 
