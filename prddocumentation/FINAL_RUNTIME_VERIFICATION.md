@@ -1,84 +1,109 @@
-# 🔬 POSEHANUM — FINAL RUNTIME VERIFICATION
+# POSEHANUM — FINAL RUNTIME VERIFICATION
 
-**Audit Date**: August 2026  
-**Auditor**: Senior Lead Mobile, AI & Systems Engineer  
-**Validation Standard**: Code inspection, mathematical derivation, test execution, build boundary validation.
+**Date**: August 2026
+**Standard**: 100% engineering truth. No feature is marked REAL unless it has an actual working runtime path.
 
----
-
-## 📋 Runtime Verification Records
-
-### 1. Feature: Real-Time 7-Region Gaussian Pose Scoring
-- **Implementation**: Pure mathematical geometric comparison in [`src/features/ai/domain/PoseScoreCalculator.ts`](file:///f:/snappose/src/features/ai/domain/PoseScoreCalculator.ts).
-- **Entry Point**: `computePoseScore(userLandmarks, refLandmarks)`.
-- **Real Dependency**: 33 MediaPipe landmark coordinates.
-- **Runtime Path**: Camera Feed $\to$ 33 Points $\to$ `PoseScoreCalculator` $\to$ Regional Gaussian $\to$ Total Score (0–100%).
-- **Test**: `src/features/ai/domain/__tests__/RealPoseAccuracy.test.ts` (14 adversarial scenarios).
-- **Result**: PASS (100%). Zero person yields exact 0%; partial body yields 0%; wrong limb orientations severely penalized.
-- **Evidence**: `PoseScoreCalculator.ts:L45-L160`.
+## Status Key
+- REAL: Full runtime path works.
+- PARTIAL: Architecture is real; blocked by an external credential, device, or model asset.
+- BLOCKED: Requires external dependency before any runtime execution is possible.
+- MISSING: No implementation of any kind.
 
 ---
 
-### 2. Feature: Dual Reference Modes (BLEND vs SKELETON)
-- **Implementation**: State-driven camera overlay switcher in [`src/app/(tabs)/camera.tsx`](file:///f:/snappose/src/app/(tabs)/camera.tsx) and [`src/features/camera/components/SPSkeletonOverlay.tsx`](file:///f:/snappose/src/features/camera/components/SPSkeletonOverlay.tsx).
-- **Entry Point**: Top segmented mode pill in camera viewfinder.
-- **Real Dependency**: Target reference image asset & Skia 2D canvas.
-- **Runtime Path**: User selects `[ BLEND ]` $\to$ Animated Opacity Slider; User selects `[ SKELETON ]` $\to$ Skia 33-point vector lines.
-- **Test**: `src/features/camera/domain/__tests__/OverlayTransformEngine.test.ts`.
-- **Result**: PASS. Gesture pinch/pan/rotate transforms coordinate matrices smoothly.
-- **Evidence**: `camera.tsx:L360-L410`, `SPSkeletonOverlay.tsx:L40-L100`.
+## Firebase Authentication
+
+| Feature | Status | Evidence |
+|---|---|---|
+| Firebase App Init | PARTIAL | Reads google-services.json. Needs file placed in project root. |
+| Sign Up | PARTIAL | createUserWithEmailAndPassword implemented. Blocked by google-services.json. |
+| Sign In | PARTIAL | signInWithEmailAndPassword implemented. Blocked by google-services.json. |
+| Auth Persistence | PARTIAL | onAuthStateChanged + SecureStore. Blocked by google-services.json. |
+| Sign Out | REAL | signOut() + SecureStore wipe. Works in guest mode. |
+| Password Reset | PARTIAL | sendPasswordResetEmail() implemented. Blocked by google-services.json. |
+| Email Verification | PARTIAL | sendEmailVerification() wired to real adapter (fixed this session). Blocked by credentials. |
+| Account Deletion | PARTIAL | currentUser.delete() + MMKV/SQLite purge. Blocked by google-services.json. |
+| Protected Routes | REAL | authStore -> redirect to sign-in. Verified in Expo Go. |
+| Backend JWT Verification | PARTIAL | firebase-admin.auth().verifyIdToken() implemented this session. Needs deployment. |
+
+BLOCKED: Requires google-services.json from Firebase Console -> Project Settings.
 
 ---
 
-### 3. Feature: AI Director Granular Coaching & Anti-Hallucination
-- **Implementation**: Priority-based angular discrepancy ranking in [`src/features/ai/domain/DirectorModeEngine.ts`](file:///f:/snappose/src/features/ai/domain/DirectorModeEngine.ts).
-- **Entry Point**: `getNextStepInstruction(alignmentScore, distanceStatus, lightingStatus, role, mode, context)`.
-- **Real Dependency**: Real-time detected landmarks vs target reference posture.
-- **Runtime Path**: Angular Difference Matrix $\to$ Ranked Error Queue $\to$ Single Line Cues ("Rotate shoulders 15° left") $\to$ HUD Banner & TTS.
-- **Test**: `src/features/ai/domain/__tests__/DirectorModeEngine.test.ts`.
-- **Result**: PASS. When no person is detected, cleanly instructs "Step into frame" without hallucinating body adjustments.
-- **Evidence**: `DirectorModeEngine.ts:L60-L180`.
+## Live Camera Pose AI Pipeline
+
+| Step | Status | Evidence |
+|---|---|---|
+| Camera Viewfinder | REAL | expo-camera CameraView. Works in Expo Go. |
+| CameraX Frame Capture | PARTIAL | CameraXPoseProcessor.kt implemented this session. Requires native build. |
+| MediaPipe Inference | PARTIAL | PoseLandmarkerHelper.kt with LIVE_STREAM mode. Requires model + build. |
+| Model Asset | BLOCKED | Run: node scripts/download-mediapipe-model.js |
+| Native Event to JS | PARTIAL | addPoseDetectedListener connected. Requires native build. |
+| Front Camera Mirror | PARTIAL | mirrorBitmap() in CameraXPoseProcessor.kt. Requires native build to verify. |
+| Score Calculation | REAL | Gaussian 7-region angular comparison. 251/251 tests pass. |
+| Director Coaching | REAL | Angular difference -> natural language. Verified by unit tests. |
+| Voice Coach | REAL | expo-speech with 2s cooldown. Works in Expo Go. |
+| Auto Capture | REAL | Score >= 90% + face + stability. Verified by unit tests. |
+| Post-Capture Evaluation | REAL | Landmark -> regional score -> verdict. Verified by unit tests. |
+| Score Floor Removed | REAL | Math.max(0, ...) — no artificial minimum. |
+| No Person = 0% | REAL | score: 0 when NO_PERSON. Enforced in code. |
+
+BLOCKED: node scripts/download-mediapipe-model.js then npm run run:android
 
 ---
 
-### 4. Feature: Multi-Gate Smart AutoCapture
-- **Implementation**: Multi-gate conjunction state machine in [`src/features/ai/domain/AutoCaptureEngine.ts`](file:///f:/snappose/src/features/ai/domain/AutoCaptureEngine.ts).
-- **Entry Point**: `tick(gates)`.
-- **Real Dependency**: Pose score $\ge 90\%$, Face detected, Eyes visible, Camera stable, Distance optimal.
-- **Runtime Path**: Gate evaluation $\to$ 3s Countdown Ring $\to$ Auto Shutter Dispatch (cancels immediately if score drops).
-- **Test**: `src/features/ai/domain/__tests__/AutoCaptureEngine.test.ts`.
-- **Result**: PASS. Conjunction guarantees zero captures on partial or dropped poses.
-- **Evidence**: `AutoCaptureEngine.ts:L24-L120`.
+## Template Platform
+
+| Feature | Status |
+|---|---|
+| Browse, Search, Open | REAL |
+| Multi-Layer Canvas | REAL |
+| Editable Text Layers | REAL |
+| Sticker Layers | REAL |
+| Cover Photo 4:5 Crop | REAL |
+| Local Save | REAL |
+| Cloud Sync (offline -> queue) | REAL |
+| Cloud Sync (live, cross-device) | BLOCKED — Needs MONGODB_URI + backend deployment |
+| Error propagation in sync | REAL (implemented this session — no more silent success:true) |
 
 ---
 
-### 5. Feature: Post-Capture Pose Accuracy Breakdown
-- **Implementation**: Post-capture evaluator in [`src/features/camera/domain/PostCaptureEvaluator.ts`](file:///f:/snappose/src/features/camera/domain/PostCaptureEvaluator.ts).
-- **Entry Point**: `evaluateCapturedPhoto(capturedLandmarks, targetPose)`.
-- **Real Dependency**: Captured photo landmarks.
-- **Runtime Path**: Shutter $\to$ Capture Frame Extraction $\to$ `PostCaptureEvaluator` $\to$ Modal with 6-region breakdown.
-- **Test**: `src/features/camera/domain/__tests__/PostCaptureEvaluator.test.ts`.
-- **Result**: PASS. Displays accurate match tier and actionable suggestions; legacy hardcoded `94%` fallback completely eliminated.
-- **Evidence**: `PostCaptureEvaluator.ts:L50-L140`.
+## Face Switch
+
+| Feature | Status |
+|---|---|
+| Consent validation | REAL |
+| Neural face synthesis | BLOCKED — requires ONNX model weights |
+| No fake output | REAL — returns success:false with clear error |
 
 ---
 
-### 6. Feature: Creative Multi-Layer Template Studio
-- **Implementation**: Interactive gesture canvas in [`src/features/templates/components/SPTemplateEditor.tsx`](file:///f:/snappose/src/features/templates/components/SPTemplateEditor.tsx) & [`src/app/template-creator/index.tsx`](file:///f:/snappose/src/app/template-creator/index.tsx).
-- **Entry Point**: `router.push('/template-creator')`.
-- **Real Dependency**: React Native Gesture Handler + Reanimated 4.
-- **Runtime Path**: User adds text/stickers $\to$ Pan/Scale/Rotate Gestures $\to$ Layer Array $\to$ Local MMKV + SQLite Store.
-- **Test**: `src/features/poses/domain/__tests__/PoseRemixEngine.test.ts`.
-- **Result**: PASS. Full persistence and manipulation of individual text layers and stickers.
-- **Evidence**: `SPTemplateEditor.tsx:L40-L150`.
+## Background Segmentation
+
+| Feature | Status |
+|---|---|
+| Interface architecture | PARTIAL |
+| Actual model inference | BLOCKED — requires Selfie Segmentation TFLite model |
 
 ---
 
-### 7. Feature: GDPR Account Deletion & Data Export
-- **Implementation**: Permanent privacy service in [`src/features/privacy/infrastructure/PrivacyDataServiceImpl.ts`](file:///f:/snappose/src/features/privacy/infrastructure/PrivacyDataServiceImpl.ts).
-- **Entry Point**: `PrivacyDataServiceImpl.deleteAccountPermanent()`.
-- **Real Dependency**: SQLite database + MMKV storage + Firebase Auth.
-- **Runtime Path**: User triggers deletion $\to$ Atomic `removeAll()` on favorites $\to$ History purge $\to$ Custom pose wipe $\to$ MMKV reset.
-- **Test**: `src/features/privacy/__tests__/PrivacyDataService.test.ts`, `src/features/security/__tests__/SecurityDefensiveAudit.test.ts`.
-- **Result**: PASS. Complete purge verified across all storage tables.
-- **Evidence**: `PrivacyDataServiceImpl.ts:L35-L100`.
+## Remaining Blockers
+
+1. MediaPipe model: run `node scripts/download-mediapipe-model.js`
+2. Native Android build: `npm run run:android` (requires Android Studio + USB device)
+3. Firebase for app: place google-services.json from Firebase Console -> project root
+4. Backend MongoDB: add MONGODB_URI to backend/.env
+5. Backend deployment: deploy backend/ to cloud host
+6. Face Switch model: bundle ONNX neural model into android assets
+7. Segmentation model: bundle selfie_segmentation.tflite into android assets
+8. AdMob Production: add production AdMob Unit IDs to .env
+9. Google Play Billing: register SKUs in Google Play Console
+
+---
+
+## Automated Verification
+
+Frontend TypeScript (npx tsc --noEmit): PASS — 0 errors
+Backend TypeScript  (npx tsc --noEmit): PASS — 0 errors
+Jest Test Suites:   29 / 29 PASS (100%)
+Unit & Property Tests: 251 / 251 PASS (100%)

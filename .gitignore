@@ -12,9 +12,9 @@ backend/dist/
 *firebase-adminsdk*.json
 *serviceAccount*.json
 
-# Native builds
-android/
-ios/
+# Native builds (root only — preserve custom native modules under modules/*)
+/android/
+/ios/
 *.orig.*
 *.jks
 *.p8

@@ -17,6 +17,10 @@ describe('NotificationIntelligenceEngine', () => {
     quietHoursEnd: '08:00',
     preferredHour: 18,
     preferredMinute: 30,
+    preferredFrequency: 'daily',
+    preferredTone: 'all',
+    soundEnabled: true,
+    hapticsEnabled: true,
   };
 
   const createBaseContext = (overrides?: Partial<NotificationEngineContext>): NotificationEngineContext => {
@@ -97,6 +101,35 @@ describe('NotificationIntelligenceEngine', () => {
     );
 
     expect(result?.message.id).toBe('trek-1');
+  });
+
+  it('filters by tone preference when specific tone is requested', () => {
+    const customMessages: NotificationPersonalityMessage[] = [
+      {
+        id: 'playful-1',
+        title: 'Playful message',
+        body: 'Playful body',
+        category: 'DAILY_MOTIVATION',
+        deepLink: '/(tabs)',
+        tone: 'playful',
+      },
+      {
+        id: 'teasing-1',
+        title: 'Teasing message',
+        body: 'Teasing body',
+        category: 'DAILY_MOTIVATION',
+        deepLink: '/(tabs)',
+        tone: 'teasing',
+      },
+    ];
+
+    const engine = new NotificationIntelligenceEngine(customMessages);
+    const result = engine.evaluateNextNotification(
+      createBaseContext(),
+      { ...mockPreferences, preferredTone: 'teasing' },
+    );
+
+    expect(result?.message.id).toBe('teasing-1');
   });
 
   it('filters out recently delivered message IDs to prevent repetitive spam', () => {

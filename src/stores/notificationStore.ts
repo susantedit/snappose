@@ -20,14 +20,27 @@ interface NotificationState {
   history: NotificationDeliveryLog[];
   exhaustedMessageIds: string[];
   lastScheduledResult: NotificationSelectionResult | null;
+  unreadCount: number;
 
   // Actions
   updatePreferences: (updates: Partial<NotificationPreferences>) => void;
-  recordDelivery: (logData: Omit<NotificationDeliveryLog, 'id' | 'timestamp' | 'opened' | 'delivered'>) => NotificationDeliveryLog;
+  recordDelivery: (logData: Omit<NotificationDeliveryLog, 'id' | 'timestamp' | 'opened' | 'delivered' | 'read'>) => NotificationDeliveryLog;
   recordOpen: (logId: string) => void;
+  markAsRead: (logId: string) => void;
+  markAllAsRead: () => void;
+  deleteLog: (logId: string) => void;
+  clearAllLogs: () => void;
+  snoozeNotification: (logId: string, minutes?: number) => void;
   resetNotificationHistory: () => void;
   evaluateAndScheduleNext: () => NotificationSelectionResult | null;
   testTriggerNotification: () => NotificationSelectionResult | null;
+  getAnalyticsSummary: () => {
+    totalDelivered: number;
+    totalOpened: number;
+    openRatePercentage: number;
+    unreadCount: number;
+    recentCategoryCount: Record<string, number>;
+  };
 }
 
 const PREFERENCES_KEY = 'snappose_notif_preferences_v1';
@@ -45,6 +58,10 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
   quietHoursEnd: '08:00',
   preferredHour: 18,
   preferredMinute: 30,
+  preferredFrequency: 'daily',
+  preferredTone: 'all',
+  soundEnabled: true,
+  hapticsEnabled: true,
 };
 
 function loadPreferences(): NotificationPreferences {
@@ -61,7 +78,11 @@ function loadHistory(): NotificationDeliveryLog[] {
   try {
     const raw = mmkv.getString(HISTORY_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed: NotificationDeliveryLog[] = JSON.parse(raw);
+      return parsed.map((h) => ({
+        ...h,
+        read: h.read ?? h.opened ?? false,
+      }));
     }
   } catch {}
   return [];
@@ -79,11 +100,14 @@ function loadExhausted(): string[] {
 
 const engine = new NotificationIntelligenceEngine();
 
+const initialHistory = loadHistory();
+
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   preferences: loadPreferences(),
-  history: loadHistory(),
+  history: initialHistory,
   exhaustedMessageIds: loadExhausted(),
   lastScheduledResult: null,
+  unreadCount: initialHistory.filter((h) => !h.read).length,
 
   updatePreferences: (updates) => {
     const updated = { ...get().preferences, ...updates };
@@ -98,6 +122,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       timestamp: Date.now(),
       delivered: true,
       opened: false,
+      read: false,
     };
 
     const nextHistory = [newLog, ...get().history].slice(0, 100);
@@ -106,12 +131,58 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     mmkv.set(HISTORY_KEY, JSON.stringify(nextHistory));
     mmkv.set(EXHAUSTED_KEY, JSON.stringify(nextExhausted));
 
-    set({ history: nextHistory, exhaustedMessageIds: nextExhausted });
+    set({
+      history: nextHistory,
+      exhaustedMessageIds: nextExhausted,
+      unreadCount: nextHistory.filter((h) => !h.read).length,
+    });
     return newLog;
   },
 
   recordOpen: (logId) => {
-    const nextHistory = get().history.map((h) => (h.id === logId ? { ...h, opened: true } : h));
+    const nextHistory = get().history.map((h) => (h.id === logId ? { ...h, opened: true, read: true } : h));
+    mmkv.set(HISTORY_KEY, JSON.stringify(nextHistory));
+    set({
+      history: nextHistory,
+      unreadCount: nextHistory.filter((h) => !h.read).length,
+    });
+  },
+
+  markAsRead: (logId) => {
+    const nextHistory = get().history.map((h) => (h.id === logId ? { ...h, read: true } : h));
+    mmkv.set(HISTORY_KEY, JSON.stringify(nextHistory));
+    set({
+      history: nextHistory,
+      unreadCount: nextHistory.filter((h) => !h.read).length,
+    });
+  },
+
+  markAllAsRead: () => {
+    const nextHistory = get().history.map((h) => ({ ...h, read: true }));
+    mmkv.set(HISTORY_KEY, JSON.stringify(nextHistory));
+    set({
+      history: nextHistory,
+      unreadCount: 0,
+    });
+  },
+
+  deleteLog: (logId) => {
+    const nextHistory = get().history.filter((h) => h.id !== logId);
+    mmkv.set(HISTORY_KEY, JSON.stringify(nextHistory));
+    set({
+      history: nextHistory,
+      unreadCount: nextHistory.filter((h) => !h.read).length,
+    });
+  },
+
+  clearAllLogs: () => {
+    mmkv.set(HISTORY_KEY, JSON.stringify([]));
+    set({ history: [], unreadCount: 0 });
+  },
+
+  snoozeNotification: (logId, minutes = 60) => {
+    const snoozedUntil = Date.now() + minutes * 60 * 1000;
+    const nextHistory = get().history.map((h) => (h.id === logId ? { ...h, snoozedUntil } : h));
     mmkv.set(HISTORY_KEY, JSON.stringify(nextHistory));
     set({ history: nextHistory });
   },
@@ -119,7 +190,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   resetNotificationHistory: () => {
     mmkv.set(HISTORY_KEY, JSON.stringify([]));
     mmkv.set(EXHAUSTED_KEY, JSON.stringify([]));
-    set({ history: [], exhaustedMessageIds: [] });
+    set({ history: [], exhaustedMessageIds: [], unreadCount: 0 });
   },
 
   evaluateAndScheduleNext: () => {
@@ -174,5 +245,26 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       });
     }
     return result;
+  },
+
+  getAnalyticsSummary: () => {
+    const { history } = get();
+    const totalDelivered = history.length;
+    const totalOpened = history.filter((h) => h.opened).length;
+    const openRatePercentage = totalDelivered > 0 ? Math.round((totalOpened / totalDelivered) * 100) : 0;
+    const unreadCount = history.filter((h) => !h.read).length;
+
+    const recentCategoryCount: Record<string, number> = {};
+    history.forEach((h) => {
+      recentCategoryCount[h.category] = (recentCategoryCount[h.category] || 0) + 1;
+    });
+
+    return {
+      totalDelivered,
+      totalOpened,
+      openRatePercentage,
+      unreadCount,
+      recentCategoryCount,
+    };
   },
 }));

@@ -9,7 +9,7 @@
  *  • Floating / Ambient Empty State illustration
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Dimensions,
   Pressable,
@@ -40,6 +40,7 @@ import { mmkv } from '@/database/mmkv/mmkvClient';
 import { SNAP_POSE_CATEGORIES, SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
 import { useFavorites } from '@/features/favorites/hooks/useFavorites';
 import type { Pose } from '@/features/poses/types';
+import { aiDirectorService, type AiSearchResponse } from '@/services/ai/AiDirectorService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HORIZONTAL_PADDING = Spacing.md;
@@ -57,6 +58,20 @@ export default function SearchScreen() {
   const [query, setQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isFocused, setIsFocused] = useState<boolean>(false);
+  const [aiResponse, setAiResponse] = useState<AiSearchResponse | null>(null);
+
+  // Dynamic AI Semantic Search on query change
+  useEffect(() => {
+    let isMounted = true;
+    aiDirectorService.searchPoses(query).then((res) => {
+      if (isMounted) {
+        setAiResponse(res);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [query]);
 
   // Recent Searches from MMKV
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
@@ -88,30 +103,17 @@ export default function SearchScreen() {
     } catch {}
   }, []);
 
-  // Filtered Pose Results
+  // Filtered Pose Results powered by AI Semantic ranking
   const results = useMemo<Pose[]>(() => {
-    let filtered = SNAP_POSE_DATASET;
+    let filtered: Pose[] = aiResponse ? aiResponse.results.map((r) => r.pose) : SNAP_POSE_DATASET;
 
-    // Filter by Category
+    // Filter by Category if selected
     if (selectedCategory !== 'all') {
       filtered = filtered.filter((p) => p.categoryId === selectedCategory);
     }
 
-    // Filter by Search Query
-    const q = query.trim().toLowerCase();
-    if (q) {
-      filtered = filtered.filter((pose) => {
-        const titleMatch = pose.title.toLowerCase().includes(q);
-        const descMatch = (pose.description ?? '').toLowerCase().includes(q);
-        const categoryMatch = (pose.category ?? pose.categoryId).toLowerCase().includes(q);
-        const difficultyMatch = pose.difficulty.toLowerCase().includes(q);
-        const tagsMatch = pose.tags?.some((t) => t.toLowerCase().includes(q)) ?? false;
-        return titleMatch || descMatch || categoryMatch || difficultyMatch || tagsMatch;
-      });
-    }
-
     return filtered;
-  }, [query, selectedCategory]);
+  }, [aiResponse, selectedCategory]);
 
   const handleOpenPose = useCallback((id: string) => {
     router.push({
@@ -276,7 +278,71 @@ export default function SearchScreen() {
           </ScrollView>
         </Animated.View>
 
-        {/* ── 4. Recent Searches ────────────────────────────────────── */}
+        {/* ── 4. AI Quick Prompts & Semantic Overview ─────────────── */}
+        {query.length > 0 && aiResponse && (
+          <Animated.View
+            entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(180)}
+            style={[
+              styles.aiDirectorCard,
+              {
+                backgroundColor: isDark ? '#1F221B' : '#E8ECE1',
+                borderColor: isDark ? 'rgba(183, 255, 0, 0.3)' : 'rgba(92, 107, 72, 0.35)',
+              },
+            ]}
+          >
+            <View style={styles.aiDirectorHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <SPIcon name="sparkles" size={15} color={Colors.olive} />
+                <Text style={[styles.aiDirectorTitle, { color: isDark ? '#C7D9B4' : '#3E4E2C' }]}>
+                  AI DIRECTED SUGGESTIONS
+                </Text>
+              </View>
+              {aiResponse.intent.detectedVibe && (
+                <View style={styles.aiVibeBadge}>
+                  <Text style={styles.aiVibeBadgeText}>{aiResponse.intent.detectedVibe.toUpperCase()}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.aiDirectorOverview, { color: isDark ? '#E5E5EA' : Colors.textPrimary }]}>
+              {aiResponse.directorOverview}
+            </Text>
+          </Animated.View>
+        )}
+
+        {/* AI Quick Prompt Inspiration Shortcuts */}
+        {query.length === 0 && (
+          <View style={styles.aiPromptShortcutsWrap}>
+            <Text style={[styles.aiPromptSectionTitle, { color: isDark ? '#A3B899' : '#4F5B38' }]}>
+              ✨ AI PROMPT IDEAS
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.aiPromptScroll}>
+              {[
+                { label: '☕ Cozy Cafe Candid', query: 'cafe relaxed coffee candid' },
+                { label: '🕶️ Power Suit Boss', query: 'tony stark confident suit' },
+                { label: '🌅 Sunset Beach Couple', query: 'beach sunset romantic couple' },
+                { label: '🏃 Dynamic Street Walk', query: 'street walking casual outfit' },
+                { label: '💪 Gym Fitness Flex', query: 'gym workout athletic power' },
+              ].map((p, idx) => (
+                <AnimatedPressable
+                  key={idx}
+                  onPress={() => handleSelectRecent(p.query)}
+                  scaleTo={0.92}
+                  style={[
+                    styles.aiPromptPill,
+                    {
+                      backgroundColor: isDark ? '#262922' : '#F0EADF',
+                      borderColor: isDark ? '#3D4435' : '#DED5C5',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.aiPromptPillText, { color: isDark ? '#DCE8D0' : Colors.textPrimary }]}>
+                    {p.label}
+                  </Text>
+                </AnimatedPressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
         {recentSearches.length > 0 && query.length === 0 && (
           <Animated.View
             entering={reduceMotion ? undefined : FadeInDown.duration(400).delay(200)}
@@ -478,6 +544,68 @@ const styles = StyleSheet.create({
     backgroundColor: '#888',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // AI Director Card
+  aiDirectorCard: {
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    marginBottom: Spacing.md,
+    gap: 6,
+  },
+  aiDirectorHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  aiDirectorTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  aiVibeBadge: {
+    backgroundColor: Colors.olive,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  aiVibeBadgeText: {
+    color: '#FFF',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  aiDirectorOverview: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+
+  // AI Prompt Shortcuts
+  aiPromptShortcutsWrap: {
+    marginBottom: Spacing.md,
+    gap: 6,
+  },
+  aiPromptSectionTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  aiPromptScroll: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  aiPromptPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  aiPromptPillText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 
   // Category Filter

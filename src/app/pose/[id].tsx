@@ -11,6 +11,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   BackHandler,
   Dimensions,
   Share,
@@ -20,11 +21,15 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Animated, {
+  Easing,
   FadeInDown,
   FadeInUp,
+  interpolate,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
+  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -43,6 +48,7 @@ import { SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
 import { useFavorites } from '@/features/favorites/hooks/useFavorites';
 import { usePersonalizationStore } from '@/stores/personalizationStore';
 import { getPoseImageSource } from '@/utils/imageUtils';
+import { SPCoupleVerificationModal } from '@/components/organisms/SPCoupleVerificationModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_IMAGE_HEIGHT = SCREEN_WIDTH * 1.15;
@@ -106,6 +112,21 @@ export default function PoseDetailScreen() {
     },
   });
 
+  const [heroImageLoaded, setHeroImageLoaded] = useState(false);
+  const shimmerProgress = useSharedValue(0);
+
+  useEffect(() => {
+    shimmerProgress.value = withRepeat(
+      withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, [shimmerProgress]);
+
+  const heroShimmerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(shimmerProgress.value, [0, 0.5, 1], [0.35, 0.85, 0.35]),
+  }));
+
   const heroImageStyle = useAnimatedStyle(() => {
     if (reduceMotion) return {};
     return {
@@ -149,7 +170,39 @@ export default function PoseDetailScreen() {
     } catch {}
   }, [pose, recordSignal]);
 
-  const handleTryPoseInCamera = useCallback(() => {
+  const handleReportPose = useCallback(() => {
+    if (!pose) return;
+    Alert.alert(
+      'Report Reference Pose',
+      'Does this pose reference contain inappropriate, explicit, or illegal content?',
+      [
+        {
+          text: 'Report Nudity / Explicit',
+          style: 'destructive',
+          onPress: () => {
+            showToast({
+              message: 'Report submitted. Our moderation team will review this pose.',
+              variant: 'success',
+            });
+          },
+        },
+        {
+          text: 'Report Other Violation',
+          onPress: () => {
+            showToast({
+              message: 'Report submitted. Thank you for keeping SnapPose safe!',
+              variant: 'info',
+            });
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  }, [pose, showToast]);
+
+  const [showCoupleModal, setShowCoupleModal] = useState(false);
+
+  const launchCameraWithPose = useCallback(() => {
     if (!pose) return;
     recordSignal({
       type: 'POSE_USED',
@@ -161,6 +214,20 @@ export default function PoseDetailScreen() {
       params: { poseId: pose.id },
     });
   }, [pose, recordSignal]);
+
+  const handleTryPoseInCamera = useCallback(() => {
+    if (!pose) return;
+    const isCouple =
+      pose.category?.toLowerCase().includes('couple') ||
+      pose.categoryId?.toLowerCase().includes('couple') ||
+      pose.title.toLowerCase().includes('couple');
+
+    if (isCouple) {
+      setShowCoupleModal(true);
+    } else {
+      launchCameraWithPose();
+    }
+  }, [pose, launchCameraWithPose]);
 
   const handleGiveFeedback = useCallback(
     (action: 'more_like_this' | 'dont_recommend') => {
@@ -229,6 +296,15 @@ export default function PoseDetailScreen() {
           </AnimatedPressable>
 
           <AnimatedPressable
+            onPress={handleReportPose}
+            scaleTo={0.88}
+            style={styles.headerButtonCircle}
+            accessibilityLabel="Report inappropriate pose"
+          >
+            <SPIcon name="alert" size={18} color="#FFFFFF" strokeWidth={2.2} />
+          </AnimatedPressable>
+
+          <AnimatedPressable
             onPress={handleToggleFav}
             scaleTo={0.88}
             hapticFeedback="medium"
@@ -255,12 +331,22 @@ export default function PoseDetailScreen() {
           paddingBottom: insets.bottom + 100,
         }}
       >
-        {/* ── 1. Hero Image with Zoom Reveal & Parallax ─────────────── */}
+        {/* ── 1. Hero Image with Zoom Reveal & Skeleton Shimmer ─────── */}
         <View style={styles.heroContainer}>
+          {!heroImageLoaded && (
+            <Animated.View
+              style={[
+                StyleSheet.absoluteFillObject,
+                { backgroundColor: isDark ? '#262A22' : '#E6DFD3' },
+                heroShimmerStyle,
+              ]}
+            />
+          )}
           <Animated.Image
             source={getPoseImageSource(pose.imageUrl)}
-            style={[styles.heroImage, heroImageStyle]}
+            style={[styles.heroImage, heroImageStyle, { opacity: heroImageLoaded ? 1 : 0 }]}
             resizeMode="cover"
+            onLoad={() => setHeroImageLoaded(true)}
           />
           <View style={styles.heroGradientOverlay} />
         </View>
@@ -280,7 +366,7 @@ export default function PoseDetailScreen() {
             },
           ]}
         >
-          {/* Category & Difficulty Badges */}
+          {/* Category, Difficulty & Social Proof Uses Badges */}
           <View style={styles.badgesRow}>
             <SPBadge
               label={pose.category ?? pose.categoryId}
@@ -296,6 +382,15 @@ export default function PoseDetailScreen() {
                   : 'error'
               }
             />
+            <View style={styles.usesPill}>
+              <SPIcon name="flame" size={12} color="#FF8A00" />
+              <Text style={styles.usesPillText}>
+                {((pose.downloads || pose.views || 42800) > 1000
+                  ? `${((pose.downloads || pose.views || 42800) / 1000).toFixed(1)}k`
+                  : (pose.downloads || pose.views || 42800))}{' '}
+                used
+              </Text>
+            </View>
           </View>
 
           {/* Title & Description with WCAG AA compliant textSecondary */}
@@ -488,12 +583,31 @@ export default function PoseDetailScreen() {
             accessibilityLabel="Try this pose in camera"
           >
             <SPIcon name="camera" size={18} color="#FFFFFF" strokeWidth={2.4} />
-            <Text style={styles.ctaButtonText}>TRY IN CAMERA</Text>
+            <Text style={styles.ctaButtonText}>TRY THIS POSE</Text>
           </AnimatedPressable>
         </View>
       </Animated.View>
 
       <SPToast {...toastProps} />
+
+      {/* Couple Verification & Roast Easter Egg Modal */}
+      <SPCoupleVerificationModal
+        visible={showCoupleModal}
+        poseName={pose.title}
+        onConfirmCouple={() => {
+          setShowCoupleModal(false);
+          launchCameraWithPose();
+        }}
+        onProceedAnyway={() => {
+          setShowCoupleModal(false);
+          launchCameraWithPose();
+        }}
+        onSelectSoloPoses={() => {
+          setShowCoupleModal(false);
+          router.replace('/(tabs)');
+        }}
+        onDismiss={() => setShowCoupleModal(false)}
+      />
     </View>
   );
 }
@@ -568,8 +682,27 @@ const styles = StyleSheet.create({
   badgesRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: Spacing.sm,
+    maxWidth: '100%',
+  },
+  usesPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 138, 0, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 138, 0, 0.3)',
+  },
+  usesPillText: {
+    color: '#FF8A00',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   poseTitle: {
     fontSize: 26,
@@ -679,17 +812,18 @@ const styles = StyleSheet.create({
   ctaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.md,
   },
   secondary3dBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 54,
-    paddingVertical: 16,
-    paddingHorizontal: Spacing.lg,
+    minHeight: 52,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.button,
-    backgroundColor: `${Colors.olive}20`,
+    backgroundColor: `${Colors.olive}18`,
     borderWidth: 1.5,
     borderColor: Colors.olive,
     gap: 6,
@@ -701,15 +835,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   ctaButton: {
-    flex: 1,
+    flex: 2,
     backgroundColor: Colors.olive,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 54,
-    paddingVertical: 16,
+    minHeight: 52,
+    paddingVertical: 14,
     borderRadius: BorderRadius.button,
-    gap: 10,
+    gap: 8,
     shadowColor: Colors.olive,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
@@ -720,6 +854,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
   },
 });

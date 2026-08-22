@@ -16,6 +16,8 @@ import axios, {
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
+import { apiCircuitBreaker } from './circuitBreaker';
+import { PerformanceService } from '../firebase/performance';
 
 // ---------------------------------------------------------------------------
 // API response envelope type
@@ -78,6 +80,9 @@ export const apiClient: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    // Tell the server we accept gzip and brotli compressed responses.
+    // Axios/Node will decompress automatically; React Native's native fetch polyfill handles it too.
+    'Accept-Encoding': 'gzip, br',
   },
 });
 
@@ -97,10 +102,43 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
-// ── Response interceptor: Retry-After on 429 ────────────────────────────
+// ── Performance metric tracking — start time stored per request ──────────
+
+const _requestStartMs = new WeakMap<object, number>();
+
+apiClient.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    _requestStartMs.set(config, Date.now());
+    return config;
+  },
+  (error) => Promise.reject(error),
+);
+
+// ── Response interceptor: Retry-After on 429 + Firebase Performance ───────
 
 apiClient.interceptors.response.use(
-  (response: AxiosResponse) => response,
+  (response: AxiosResponse) => {
+    // Record HTTP metric for Firebase Performance Monitoring
+    try {
+      const cfg = response.config;
+      const url = (cfg.baseURL ?? '') + (cfg.url ?? '');
+      const startMs = _requestStartMs.get(cfg as object) ?? Date.now();
+      const durationMs = Date.now() - startMs;
+      const contentLength = Number(response.headers?.['content-length'] ?? 0);
+
+      const metric = PerformanceService.newHttpMetric(url, cfg.method?.toUpperCase() ?? 'GET');
+      metric.start();
+      metric.setHttpResponseCode(response.status);
+      metric.setResponseContentType(String(response.headers?.['content-type'] ?? 'application/json'));
+      if (contentLength > 0) metric.setResponsePayloadSize(contentLength);
+      metric.stop();
+
+      // Also record duration as a named trace metric for dashboarding
+      PerformanceService.recordMetric('api_request', 'duration_ms', durationMs);
+    } catch { /* Never let perf monitoring crash a request */ }
+
+    return response;
+  },
   async (error) => {
     const status = error?.response?.status;
 
@@ -120,24 +158,39 @@ apiClient.interceptors.response.use(
 // ---------------------------------------------------------------------------
 
 export async function apiGet<T>(url: string, params?: Record<string, unknown>): Promise<T> {
-  const res = await apiClient.get<ApiResponse<T>>(url, { params });
-  return unwrap(res.data);
+  return apiCircuitBreaker.execute(async () => {
+    const res = await apiClient.get<ApiResponse<T>>(url, { params });
+    return unwrap(res.data);
+  });
 }
 
 export async function apiPost<T>(url: string, data?: unknown): Promise<T> {
-  const res = await apiClient.post<ApiResponse<T>>(url, data);
-  return unwrap(res.data);
+  return apiCircuitBreaker.execute(async () => {
+    const res = await apiClient.post<ApiResponse<T>>(url, data);
+    return unwrap(res.data);
+  });
 }
 
 export async function apiDelete<T>(url: string): Promise<T> {
-  const res = await apiClient.delete<ApiResponse<T>>(url);
-  return unwrap(res.data);
+  return apiCircuitBreaker.execute(async () => {
+    const res = await apiClient.delete<ApiResponse<T>>(url);
+    return unwrap(res.data);
+  });
+}
+
+/**
+ * Returns the current circuit breaker state for displaying an offline banner.
+ * 'CLOSED' = normal, 'OPEN' = backend down/fast-failing, 'HALF_OPEN' = recovering.
+ */
+export function getApiCircuitState() {
+  return apiCircuitBreaker.getState();
 }
 
 export const api = {
   get: apiGet,
   post: apiPost,
   delete: apiDelete,
+  circuitState: getApiCircuitState,
 };
 
 function unwrap<T>(response: ApiResponse<T>): T {

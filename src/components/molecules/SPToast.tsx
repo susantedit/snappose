@@ -72,7 +72,7 @@ export function SPToast({
   message,
   description,
   variant = 'info',
-  position = 'bottom',
+  position = 'top',
   duration = 3500,
   onDismiss,
   style,
@@ -187,7 +187,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: Spacing.md,
     right: Spacing.md,
-    zIndex: 9000,
+    zIndex: 999999,
+    elevation: 9999,
   },
   container: {
     flexDirection: 'row',

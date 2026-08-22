@@ -1,102 +1,170 @@
 /**
  * CloudTemplateRepository — POSEHANUM
  *
- * Implements cloud synchronization interface for user-created templates.
- * Operates in a local-first pattern: changes are persisted to MMKV immediately,
- * and queued for remote synchronization via the background sync worker.
+ * Implements cloud synchronization for user-created templates.
+ * Local-first: changes are persisted to MMKV immediately.
+ * Remote operations are attempted and results are returned accurately —
+ * failures are reported as such rather than silently swallowed.
+ *
+ * BACKEND REQUIREMENT:
+ * Set EXPO_PUBLIC_MONGODB_API_URL in .env to point to a running backend.
+ * The backend requires MONGODB_URI in its own .env to connect to MongoDB Atlas.
  */
 
 import { api } from '@/services/api/client';
 import type { Template } from '../types';
 
+export type CloudSyncStatus = 'synced' | 'offline' | 'error';
+
+export interface CloudResult<T = void> {
+  success: boolean;
+  data?: T;
+  status: CloudSyncStatus;
+  error?: string;
+}
+
 export interface ICloudTemplateRepository {
-  publishTemplate(template: Template): Promise<{ success: boolean; remoteId?: string; error?: string }>;
-  fetchPublishedTemplates(page?: number, limit?: number): Promise<Template[]>;
-  fetchTemplatesByCreator(creatorUid: string): Promise<Template[]>;
-  deleteTemplate(templateId: string, creatorUid: string): Promise<{ success: boolean; error?: string }>;
-  likeTemplate(templateId: string, userUid: string): Promise<{ success: boolean }>;
-  useTemplate(templateId: string): Promise<{ success: boolean }>;
-  remixTemplate(templateId: string): Promise<{ success: boolean }>;
-  reportTemplate(templateId: string, reason: string, reporterUid?: string): Promise<{ success: boolean }>;
+  publishTemplate(template: Template): Promise<CloudResult<{ remoteId: string }>>;
+  fetchPublishedTemplates(page?: number, limit?: number): Promise<CloudResult<Template[]>>;
+  fetchTemplatesByCreator(creatorUid: string): Promise<CloudResult<Template[]>>;
+  deleteTemplate(templateId: string, creatorUid: string): Promise<CloudResult>;
+  likeTemplate(templateId: string, userUid: string): Promise<CloudResult>;
+  useTemplate(templateId: string): Promise<CloudResult>;
+  remixTemplate(templateId: string): Promise<CloudResult>;
+  reportTemplate(templateId: string, reason: string, reporterUid?: string): Promise<CloudResult>;
+}
+
+function isNetworkError(err: unknown): boolean {
+  const msg = (err as any)?.message?.toLowerCase() ?? '';
+  return (
+    msg.includes('network') ||
+    msg.includes('econnrefused') ||
+    msg.includes('timeout') ||
+    msg.includes('failed to fetch') ||
+    (err as any)?.code === 'ECONNREFUSED' ||
+    (err as any)?.code === 'ENOTFOUND'
+  );
 }
 
 export class CloudTemplateRepository implements ICloudTemplateRepository {
-  public async publishTemplate(template: Template): Promise<{ success: boolean; remoteId?: string; error?: string }> {
+  public async publishTemplate(
+    template: Template,
+  ): Promise<CloudResult<{ remoteId: string }>> {
     try {
       const result = await api.post<{ template: Template }>('/templates', template);
       return {
         success: true,
-        remoteId: result.template?.id || template.id,
+        status: 'synced',
+        data: { remoteId: result.template?.id || template.id },
       };
-    } catch {
-      // Local-first offline success: template is safely stored in local MMKV store
+    } catch (err) {
+      if (isNetworkError(err)) {
+        return {
+          success: false,
+          status: 'offline',
+          error: 'Backend unreachable. Template saved locally and will sync when connected.',
+        };
+      }
       return {
-        success: true,
-        remoteId: template.id,
+        success: false,
+        status: 'error',
+        error: (err as any)?.message ?? 'Failed to publish template.',
       };
     }
   }
 
-  public async fetchPublishedTemplates(page = 1, limit = 20): Promise<Template[]> {
+  public async fetchPublishedTemplates(page = 1, limit = 20): Promise<CloudResult<Template[]>> {
     try {
       const result = await api.get<{ templates: Template[] }>('/templates', { page, limit });
-      return result.templates || [];
-    } catch {
-      return [];
+      return {
+        success: true,
+        status: 'synced',
+        data: result.templates || [],
+      };
+    } catch (err) {
+      if (isNetworkError(err)) {
+        return { success: false, status: 'offline', data: [], error: 'Offline — showing local templates.' };
+      }
+      return { success: false, status: 'error', data: [], error: (err as any)?.message };
     }
   }
 
-  public async fetchTemplatesByCreator(creatorUid: string): Promise<Template[]> {
+  public async fetchTemplatesByCreator(creatorUid: string): Promise<CloudResult<Template[]>> {
     try {
       const result = await api.get<{ templates: Template[] }>('/templates', { creatorId: creatorUid });
-      return result.templates || [];
-    } catch {
-      return [];
+      return { success: true, status: 'synced', data: result.templates || [] };
+    } catch (err) {
+      if (isNetworkError(err)) {
+        return { success: false, status: 'offline', data: [], error: 'Offline — showing local templates.' };
+      }
+      return { success: false, status: 'error', data: [], error: (err as any)?.message };
     }
   }
 
-  public async deleteTemplate(templateId: string, _creatorUid: string): Promise<{ success: boolean; error?: string }> {
+  public async deleteTemplate(
+    templateId: string,
+    _creatorUid: string,
+  ): Promise<CloudResult> {
     try {
       await api.delete(`/templates/${encodeURIComponent(templateId)}`);
-      return { success: true };
-    } catch {
-      return { success: true }; // Local deletion took precedence
+      return { success: true, status: 'synced' };
+    } catch (err) {
+      if (isNetworkError(err)) {
+        return { success: false, status: 'offline', error: 'Delete queued — will sync when connected.' };
+      }
+      return { success: false, status: 'error', error: (err as any)?.message };
     }
   }
 
-  public async likeTemplate(templateId: string, _userUid: string): Promise<{ success: boolean }> {
+  public async likeTemplate(templateId: string, _userUid: string): Promise<CloudResult> {
     try {
       await api.post(`/templates/${encodeURIComponent(templateId)}/like`);
-      return { success: true };
-    } catch {
-      return { success: true };
+      return { success: true, status: 'synced' };
+    } catch (err) {
+      if (isNetworkError(err)) {
+        return { success: false, status: 'offline', error: 'Like queued for sync.' };
+      }
+      return { success: false, status: 'error', error: (err as any)?.message };
     }
   }
 
-  public async useTemplate(templateId: string): Promise<{ success: boolean }> {
+  public async useTemplate(templateId: string): Promise<CloudResult> {
     try {
       await api.post(`/templates/${encodeURIComponent(templateId)}/use`);
-      return { success: true };
-    } catch {
-      return { success: true };
+      return { success: true, status: 'synced' };
+    } catch (err) {
+      if (isNetworkError(err)) {
+        return { success: false, status: 'offline', error: 'Use event queued for sync.' };
+      }
+      return { success: false, status: 'error', error: (err as any)?.message };
     }
   }
 
-  public async remixTemplate(templateId: string): Promise<{ success: boolean }> {
+  public async remixTemplate(templateId: string): Promise<CloudResult> {
     try {
       await api.post(`/templates/${encodeURIComponent(templateId)}/remix`);
-      return { success: true };
-    } catch {
-      return { success: true };
+      return { success: true, status: 'synced' };
+    } catch (err) {
+      if (isNetworkError(err)) {
+        return { success: false, status: 'offline', error: 'Remix event queued for sync.' };
+      }
+      return { success: false, status: 'error', error: (err as any)?.message };
     }
   }
 
-  public async reportTemplate(templateId: string, reason: string, details?: string): Promise<{ success: boolean }> {
+  public async reportTemplate(
+    templateId: string,
+    reason: string,
+    details?: string,
+  ): Promise<CloudResult> {
     try {
       await api.post(`/templates/${encodeURIComponent(templateId)}/report`, { reason, details });
-      return { success: true };
-    } catch {
-      return { success: true };
+      return { success: true, status: 'synced' };
+    } catch (err) {
+      if (isNetworkError(err)) {
+        return { success: false, status: 'offline', error: 'Report queued for sync.' };
+      }
+      return { success: false, status: 'error', error: (err as any)?.message };
     }
   }
 }

@@ -16,6 +16,23 @@
 
 ---
 
+## 🔐 Firebase Authentication Forensic Audit Table
+
+| Firebase Feature | Classification | Evidence / Implementation Path |
+|---|:---:|---|
+| **Firebase Configuration** | 🟡 **PARTIAL / 🔒 BLOCKED** | [`src/services/firebase/firebaseConfig.ts`](file:///f:/snappose/src/services/firebase/firebaseConfig.ts) reads from `google-services.json`. Requires attaching live `google-services.json` to native Android build. |
+| **Firebase Sign Up** | ✅ **REAL (Code)** / 🔒 **BLOCKED (Keys)** | [`FirebaseAuthAdapter.ts:L205`](file:///f:/snappose/src/features/auth/infrastructure/FirebaseAuthAdapter.ts#L205) implements `createUserWithEmailAndPassword(email, password)` with profile updates. |
+| **Firebase Sign In** | ✅ **REAL (Code)** / 🔒 **BLOCKED (Keys)** | [`FirebaseAuthAdapter.ts:L130`](file:///f:/snappose/src/features/auth/infrastructure/FirebaseAuthAdapter.ts#L130) implements `signInWithEmailAndPassword(email, password)`. |
+| **Firebase Auth Persistence** | ✅ **REAL (Code)** / 🔒 **BLOCKED (Keys)** | [`FirebaseAuthAdapter.ts:L188`](file:///f:/snappose/src/features/auth/infrastructure/FirebaseAuthAdapter.ts#L188) implements `onAuthStateChanged` and caching to Expo SecureStore. |
+| **Firebase Sign Out** | ✅ **REAL** | [`FirebaseAuthAdapter.ts:L149`](file:///f:/snappose/src/features/auth/infrastructure/FirebaseAuthAdapter.ts#L149) executes `signOut()` and clears SecureStore tokens and auth state. |
+| **Firebase Password Reset** | ✅ **REAL (Code)** / 🔒 **BLOCKED (Keys)** | [`FirebaseAuthAdapter.ts:L238`](file:///f:/snappose/src/features/auth/infrastructure/FirebaseAuthAdapter.ts#L238) implements `sendPasswordResetEmail(email)`. |
+| **Firebase Account Deletion** | ✅ **REAL** | [`FirebaseAuthAdapter.ts:L262`](file:///f:/snappose/src/features/auth/infrastructure/FirebaseAuthAdapter.ts#L262) calls `delete()` on current user and purges SQLite/MMKV data. |
+| **Firebase Protected Routes** | ✅ **REAL** | `src/app/(tabs)/_layout.tsx` checks `authStore` user state and redirects unauthenticated users. |
+| **Firebase/Firestore User Data** | 🟡 **PARTIAL** | REST client sync adapter handles offline queue mutations to backend routes [`backend/src/routes/templates.ts`](file:///f:/snappose/backend/src/routes/templates.ts). |
+| **Firebase Security Rules** | ✅ **REAL** | Auth token middleware [`backend/src/middleware/auth.ts`](file:///f:/snappose/backend/src/middleware/auth.ts) validates JWT bearer token and enforces UID ownership. |
+
+---
+
 ## 📋 Comprehensive Feature Audit Table
 
 | Feature | Exists | Real Runtime | Hardcoded | Mocked | Partial | Missing | Blocked | Evidence / Runtime Path |
@@ -68,6 +85,7 @@
 | **Hardware BackHandler Dismissal**| Yes | ✅ | No | No | No | No | No | `camera.tsx` (layered modal priority interception) |
 | **Bluetooth / Volume Shutter Hook**| Yes | ✅ | No | No | No | No | No | `useBluetoothShutter.ts` |
 | **Static Image Pose Extraction** | Yes | ✅ | No | No | No | No | No | `StaticLandmarkExtractor.ts` (33-landmark parser) |
+| **Deterministic Shot Prediction** | Yes | ✅ | No | No | No | No | No | `SPShotBuilder.tsx` (difficulty formula, zero Math.random) |
 | **Google AdMob Integration** | Yes | 🔒 | No | No | No | No | 🔒 | `AdMobAdapter.ts` (requires live Production Unit IDs) |
 | **Google Play Billing (IAP)** | Yes | 🔒 | No | No | No | No | 🔒 | `billingStore.ts` (requires Play Console registered SKUs) |
 | **Firebase App Check** | Yes | 🔒 | No | No | No | No | 🔒 | `firebaseConfig.ts` (requires release SHA-256 in Firebase) |

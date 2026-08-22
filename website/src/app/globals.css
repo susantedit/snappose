@@ -9,18 +9,38 @@
   --cyan: #00D9FF;
   --orange: #FF8A00;
   --surface: #151D18;
+
+  /* Typographic Hierarchy Tokens */
+  --font-weight-header: 700;
+  --font-weight-subheader: 500;
+  --font-weight-body: 400;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 html {
   scroll-behavior: smooth;
   color-scheme: dark;
+  max-width: 100vw;
+  overflow-x: clip;
 }
 
 body {
   background-color: #0A0E0C;
   color: #F5F7F5;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  overflow-x: hidden;
+  max-width: 100vw;
+  overflow-x: clip;
+  position: relative;
+}
+
+main {
+  max-width: 100vw;
+  overflow-x: clip;
 }
 
 ::selection {

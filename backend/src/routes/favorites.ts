@@ -8,7 +8,7 @@ const router = Router();
 // GET /favorites
 router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const favorites = await FavoriteModel.find({ userId: req.userId }).sort({ createdAt: -1 });
+    const favorites = await FavoriteModel.find({ userId: req.userId }).sort({ createdAt: -1 }).lean();
     const poseIds = favorites.map((f) => f.poseId);
     res.json(success(poseIds));
   } catch (err) {
@@ -16,7 +16,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
   }
 });
 
-// POST /favorites (Add to favorites)
+// POST /favorites (Add single favorite)
 router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { poseId } = req.body;
@@ -34,6 +34,34 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
     res.json(success({ poseId, isFavorite: true }));
   } catch (err) {
     res.status(500).json(error('INTERNAL_ERROR', 'Failed to save favorite'));
+  }
+});
+
+// POST /favorites/batch (Batch add/sync multiple favorites in a single roundtrip)
+router.post('/batch', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { poseIds } = req.body;
+    if (!Array.isArray(poseIds) || poseIds.length === 0) {
+      res.status(400).json(error('INVALID_INPUT', 'poseIds array is required'));
+      return;
+    }
+
+    // Cap batch size to prevent oversized statements
+    const cappedPoseIds = poseIds.slice(0, 200);
+
+    const bulkOps = cappedPoseIds.map((poseId: string) => ({
+      updateOne: {
+        filter: { userId: req.userId, poseId },
+        update: { $setOnInsert: { userId: req.userId, poseId, createdAt: new Date() } },
+        upsert: true,
+      },
+    }));
+
+    await FavoriteModel.bulkWrite(bulkOps, { ordered: false });
+
+    res.json(success({ syncedCount: cappedPoseIds.length, poseIds: cappedPoseIds }));
+  } catch (err) {
+    res.status(500).json(error('INTERNAL_ERROR', 'Failed to batch save favorites'));
   }
 });
 

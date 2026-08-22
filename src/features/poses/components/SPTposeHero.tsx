@@ -121,9 +121,13 @@ export function SPTposeHero({ onExplorePress }: SPTposeHeroProps) {
       />
       <View style={styles.gradientOverlay} pointerEvents="none" />
 
-      {/* Concept Tags Ribbon */}
+      {/* Concept Tags Ribbon with Social Proof Uses Badge */}
       <View style={styles.conceptRibbon}>
-        {CONCEPT_TAGS.slice(0, 5).map((tag) => (
+        <View style={styles.usesRibbonPill}>
+          <SPIcon name="flame" size={12} color="#FF8A00" />
+          <Text style={styles.usesRibbonText}>42.8k+ Captured</Text>
+        </View>
+        {CONCEPT_TAGS.slice(0, 4).map((tag) => (
           <View key={tag} style={[styles.conceptPill, tag === 'POWER T-POSE' && styles.conceptPillActive]}>
             <Text style={[styles.conceptText, tag === 'POWER T-POSE' && styles.conceptTextActive]}>
               {tag}
@@ -263,10 +267,28 @@ const styles = StyleSheet.create({
   },
   conceptRibbon: {
     flexDirection: 'row',
+    alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
     marginBottom: 12,
     zIndex: 2,
+  },
+  usesRibbonPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 138, 0, 0.28)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 138, 0, 0.5)',
+  },
+  usesRibbonText: {
+    color: '#FFB74D',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   conceptPill: {
     backgroundColor: 'rgba(0, 0, 0, 0.65)',

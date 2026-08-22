@@ -80,6 +80,64 @@ export async function insertCapturedPhoto(
   }
 }
 
+/**
+ * Bulk batch insert multiple captured photos inside a single transaction.
+ * Chunked to avoid oversized statement locks.
+ */
+export async function batchInsertCapturedPhotos(
+  db: SQLiteDatabase,
+  photos: InsertCapturedPhotoParams[],
+  chunkSize = 50
+): Promise<void> {
+  if (!photos.length) return;
+  try {
+    await db.withTransactionAsync(async () => {
+      for (let i = 0; i < photos.length; i += chunkSize) {
+        const chunk = photos.slice(i, i + chunkSize);
+        for (const photo of chunk) {
+          await db.runAsync(
+            `INSERT OR REPLACE INTO captured_photos
+             (id, poseId, localPath, thumbnail, width, height, aiScore, capturedAt, favorite)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              photo.id,
+              photo.poseId ?? '',
+              photo.localPath,
+              photo.thumbnail,
+              photo.width,
+              photo.height,
+              photo.aiScore,
+              photo.capturedAt,
+              photo.favorite ? 1 : 0,
+            ]
+          );
+        }
+      }
+    });
+  } catch (err) {
+    console.error('[capturedPhotoDao] batchInsertCapturedPhotos failed:', err);
+  }
+}
+
+/**
+ * Bulk batch delete multiple captured photos inside a single transaction.
+ */
+export async function batchDeleteCapturedPhotos(
+  db: SQLiteDatabase,
+  photoIds: string[]
+): Promise<void> {
+  if (!photoIds.length) return;
+  try {
+    const placeholders = photoIds.map(() => '?').join(',');
+    await db.runAsync(
+      `DELETE FROM captured_photos WHERE id IN (${placeholders})`,
+      photoIds
+    );
+  } catch (err) {
+    console.error('[capturedPhotoDao] batchDeleteCapturedPhotos failed:', err);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Query
 // ---------------------------------------------------------------------------

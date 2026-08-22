@@ -6,7 +6,13 @@
 export type NotificationCategoryFamily =
   | 'DAILY_MOTIVATION'
   | 'COMEBACK'
+  | 'LOW_SCORE'
+  | 'MEDIUM_SCORE'
   | 'HIGH_SCORE'
+  | 'PERFECT_SCORE'
+  | 'NO_PERSON'
+  | 'REPEATED_FAILED'
+  | 'STREAK'
   | 'POSE_CHALLENGE'
   | 'CATEGORY_BASED'
   | 'TIME_AWARE'
@@ -17,6 +23,21 @@ export type NotificationType = NotificationCategoryFamily | 'daily_pose' | 'capt
 
 export type TimeWindow = 'morning' | 'afternoon' | 'evening' | 'night' | 'any';
 
+export type NotificationTone =
+  | 'roasted'
+  | 'funny'
+  | 'crispy'
+  | 'savage'
+  | 'confident'
+  | 'hype'
+  | 'coaching'
+  | 'achievement'
+  | 'playful'
+  | 'positive'
+  | 'motivational'
+  | 'clever'
+  | 'teasing';
+
 export interface NotificationPersonalityMessage {
   id: string;
   title: string;
@@ -24,15 +45,21 @@ export interface NotificationPersonalityMessage {
   category: NotificationCategoryFamily;
   subCategory?: string; // e.g. 'trek', 'cafe', 'beach', 'selfie', 'mountain', 'friday', 'weekend'
   deepLink: string;
-  tone: 'playful' | 'clever' | 'confident' | 'motivational' | 'teasing';
+  tone: NotificationTone;
   minInactivityDays?: number;
   maxInactivityDays?: number;
   minScore?: number;
+  maxScore?: number;
+  minStreakDays?: number;
+  minRepeatedAttempts?: number;
   targetCategories?: string[];
   timeWindow?: TimeWindow;
   daysOfWeek?: number[]; // 0 = Sun, 1 = Mon, ..., 6 = Sat
   milestoneThreshold?: number;
 }
+
+export type NotificationFrequency = 'daily' | 'every_other_day' | 'smart_ai';
+export type NotificationToneFilter = 'all' | NotificationTone;
 
 export interface NotificationPreferences {
   enabled: boolean;
@@ -45,6 +72,10 @@ export interface NotificationPreferences {
   quietHoursEnd: string; // e.g. "08:00"
   preferredHour: number; // e.g. 18 (6 PM)
   preferredMinute: number; // e.g. 30
+  preferredFrequency: NotificationFrequency;
+  preferredTone: NotificationToneFilter;
+  soundEnabled: boolean;
+  hapticsEnabled: boolean;
 }
 
 export interface NotificationDeliveryLog {
@@ -57,12 +88,18 @@ export interface NotificationDeliveryLog {
   timestamp: number;
   delivered: boolean;
   opened: boolean;
+  read: boolean;
+  actionTaken?: string | null;
+  snoozedUntil?: number | null;
 }
 
 export interface NotificationEngineContext {
   lastActiveTimestamp: number;
   totalAttempts: number;
   bestScore: number;
+  lastAttemptScore?: number;
+  recentFailedAttemptsCount?: number;
+  streakDays?: number;
   favoriteCategories: string[];
   favoritePosesCount: number;
   currentTime: Date;

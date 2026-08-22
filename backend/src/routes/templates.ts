@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { Template } from '../models/Template';
 import { success, error } from '../utils/response';
 import { optionalAuth, requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { routeCache, CACHE_TTL, makeCacheKey, generateETag } from '../utils/cache';
 
 const router = Router();
 
@@ -12,6 +13,22 @@ const router = Router();
 router.get('/', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { category, search, vibe, page = '1', limit = '20' } = req.query;
+
+    const isPublicQuery = !req.headers.authorization;
+    const cacheKey = makeCacheKey('templates', { category, search, vibe, page, limit });
+
+    if (isPublicQuery) {
+      const cached = routeCache.get<any>(cacheKey);
+      if (cached) {
+        const etag = generateETag(cached);
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=300');
+        if (req.headers['if-none-match'] === etag) {
+          return res.status(304).end();
+        }
+        return res.json(success(cached));
+      }
+    }
 
     const query: Record<string, unknown> = {
       visibility: 'PUBLIC',
@@ -46,22 +63,28 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       Template.countDocuments(query),
     ]);
 
-    // Cache public response at edge/client for 2 minutes with stale-while-revalidate
-    if (!req.headers.authorization) {
+    const resultPayload = {
+      templates,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    };
+
+    if (isPublicQuery) {
+      routeCache.set(cacheKey, resultPayload, CACHE_TTL.templates);
+      const etag = generateETag(resultPayload);
+      res.setHeader('ETag', etag);
       res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=300');
+
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
     }
 
-    return res.json(
-      success({
-        templates,
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          total,
-          pages: Math.ceil(total / limitNum),
-        },
-      })
-    );
+    return res.json(success(resultPayload));
   } catch (err: any) {
     return res.status(500).json(error('INTERNAL_ERROR', err?.message || 'Failed to fetch templates'));
   }
@@ -73,6 +96,12 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
  */
 router.get('/trending', async (_req: Request, res: Response) => {
   try {
+    const cacheKey = 'templates:trending';
+    const cached = routeCache.get<any>(cacheKey);
+    if (cached) {
+      return res.json(success({ templates: cached }));
+    }
+
     const trending = await Template.find({
       visibility: 'PUBLIC',
       moderationStatus: 'APPROVED',
@@ -81,6 +110,8 @@ router.get('/trending', async (_req: Request, res: Response) => {
       .sort({ trendScore: -1, uses: -1, likes: -1 })
       .limit(10)
       .lean();
+
+    routeCache.set(cacheKey, trending, CACHE_TTL.templates);
 
     return res.json(success({ templates: trending }));
   } catch (err: any) {
@@ -136,6 +167,9 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
       visibility: payload.visibility || 'PUBLIC',
     });
 
+    // Invalidate cached templates list
+    routeCache.invalidatePrefix('templates');
+
     return res.status(201).json(success({ template: newTemplate }));
   } catch (err: any) {
     return res.status(500).json(error('INTERNAL_ERROR', err?.message || 'Failed to create template'));
@@ -160,10 +194,15 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
       return res.status(403).json(error('FORBIDDEN', 'You can only edit your own templates.'));
     }
 
-    Object.assign(existing, req.body);
-    await existing.save();
+    const updated = await Template.findOneAndUpdate(
+      { id },
+      { $set: { ...req.body, updatedAt: new Date() } },
+      { new: true }
+    );
 
-    return res.json(success({ template: existing }));
+    routeCache.invalidatePrefix('templates');
+
+    return res.json(success({ template: updated }));
   } catch (err: any) {
     return res.status(500).json(error('INTERNAL_ERROR', err?.message || 'Failed to update template'));
   }
@@ -171,7 +210,7 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
 
 /**
  * DELETE /api/templates/:id
- * Delete template (restricted to owner).
+ * Delete a template (restricted to owner).
  */
 router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -188,6 +227,8 @@ router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res: Respon
     }
 
     await Template.deleteOne({ id });
+    routeCache.invalidatePrefix('templates');
+
     return res.json(success({ deleted: true, id }));
   } catch (err: any) {
     return res.status(500).json(error('INTERNAL_ERROR', err?.message || 'Failed to delete template'));
@@ -196,13 +237,13 @@ router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res: Respon
 
 /**
  * POST /api/templates/:id/like
- * Increment likes on a template.
+ * Increment like counter.
  */
-router.post('/:id/like', async (req: Request, res: Response) => {
+router.post('/:id/like', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const result = await Template.findOneAndUpdate({ id }, { $inc: { likes: 1 } }, { new: true });
-    return res.json(success({ likes: result?.likes ?? 0 }));
+    await Template.updateOne({ id }, { $inc: { likes: 1, trendScore: 2 } });
+    return res.json(success({ liked: true }));
   } catch (err: any) {
     return res.status(500).json(error('INTERNAL_ERROR', err?.message || 'Failed to like template'));
   }
@@ -212,33 +253,25 @@ router.post('/:id/like', async (req: Request, res: Response) => {
  * POST /api/templates/:id/use
  * Increment usage counter.
  */
-router.post('/:id/use', async (req: Request, res: Response) => {
+router.post('/:id/use', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const result = await Template.findOneAndUpdate(
-      { id },
-      { $inc: { uses: 1, trendScore: 2 } },
-      { new: true }
-    );
-    return res.json(success({ uses: result?.uses ?? 0 }));
+    await Template.updateOne({ id }, { $inc: { uses: 1, trendScore: 5 } });
+    return res.json(success({ used: true }));
   } catch (err: any) {
-    return res.status(500).json(error('INTERNAL_ERROR', err?.message || 'Failed to record usage'));
+    return res.status(500).json(error('INTERNAL_ERROR', err?.message || 'Failed to record template use'));
   }
 });
 
 /**
  * POST /api/templates/:id/remix
- * Record a remix action on a template.
+ * Increment remix counter.
  */
-router.post('/:id/remix', async (req: Request, res: Response) => {
+router.post('/:id/remix', optionalAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const result = await Template.findOneAndUpdate(
-      { id },
-      { $inc: { remixes: 1, trendScore: 3 } },
-      { new: true }
-    );
-    return res.json(success({ remixes: result?.remixes ?? 0 }));
+    await Template.updateOne({ id }, { $inc: { remixes: 1, trendScore: 10 } });
+    return res.json(success({ remixed: true }));
   } catch (err: any) {
     return res.status(500).json(error('INTERNAL_ERROR', err?.message || 'Failed to record remix'));
   }
@@ -246,7 +279,7 @@ router.post('/:id/remix', async (req: Request, res: Response) => {
 
 /**
  * POST /api/templates/:id/report
- * Submit a moderation report for a template.
+ * Report a template for content moderation.
  */
 router.post('/:id/report', optionalAuth, async (req: Request, res: Response) => {
   try {
@@ -254,33 +287,23 @@ router.post('/:id/report', optionalAuth, async (req: Request, res: Response) => 
     const { reason, details } = req.body;
 
     if (!reason) {
-      return res.status(400).json(error('VALIDATION_ERROR', 'Report reason is required'));
+      return res.status(400).json(error('VALIDATION_ERROR', 'reason is required'));
     }
 
-    // Flag template if multiple reports arrive
-    await Template.updateOne(
-      { id },
-      {
-        $inc: { reportCount: 1 },
-        $push: {
-          reports: {
-            reason,
-            details: details || '',
-            reportedAt: new Date(),
-          },
-        },
-      }
-    );
+    const template = await Template.findOne({ id });
+    if (!template) {
+      return res.status(404).json(error('NOT_FOUND', 'Template not found'));
+    }
 
-    return res.json(
-      success({
-        reported: true,
-        id,
-        message: 'Report received and queued for moderation review.',
-      })
-    );
+    template.reportCount = (template.reportCount || 0) + 1;
+    if (template.reportCount >= 3) {
+      template.moderationStatus = 'REJECTED';
+    }
+    await template.save();
+
+    return res.json(success({ reported: true, templateId: id, reason, details }));
   } catch (err: any) {
-    return res.status(500).json(error('INTERNAL_ERROR', err?.message || 'Failed to submit report'));
+    return res.status(500).json(error('INTERNAL_ERROR', err?.message || 'Failed to report template'));
   }
 });
 

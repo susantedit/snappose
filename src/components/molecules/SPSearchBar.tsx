@@ -10,9 +10,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
-  Text,
   TextInput,
-  View,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -68,6 +66,7 @@ export function SPSearchBar({
 }: SPSearchBarProps) {
   const { theme } = useTheme();
   const [localText, setLocalText] = useState(value ?? '');
+  const inputRef = useRef<TextInput>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep local state in sync when controlled value changes externally
@@ -93,6 +92,7 @@ export function SPSearchBar({
 
   const handleClear = useCallback(() => {
     handleChange('');
+    inputRef.current?.focus();
   }, [handleChange]);
 
   // Cleanup timer on unmount
@@ -108,28 +108,24 @@ export function SPSearchBar({
   const textColor = isDark ? '#FFFFFF' : Colors.textPrimary;
   const placeholderColor = isDark ? '#888888' : Colors.textDisabled;
 
-  if (readOnly) {
-    return (
-      <Pressable
-        onPress={onPress}
-        style={[styles.container, { backgroundColor: bgColor, borderColor }, style]}
-        accessibilityRole="search"
-        accessibilityLabel={accessibilityLabel}
-        accessibilityHint="Tap to search poses"
-      >
-        <SPIcon name="search" size={18} color={placeholderColor} strokeWidth={2.2} />
-        <Text style={[styles.placeholder, { color: placeholderColor }]}>{placeholder}</Text>
-      </Pressable>
-    );
-  }
+  const handleContainerPress = () => {
+    if (readOnly) {
+      onPress?.();
+    } else {
+      inputRef.current?.focus();
+    }
+  };
 
   return (
-    <View
+    <Pressable
+      onPress={handleContainerPress}
       style={[styles.container, { backgroundColor: bgColor, borderColor }, style]}
       accessibilityRole="search"
+      accessibilityLabel={accessibilityLabel}
     >
       <SPIcon name="search" size={18} color={placeholderColor} strokeWidth={2.2} />
       <TextInput
+        ref={inputRef}
         value={localText}
         onChangeText={handleChange}
         placeholder={placeholder}
@@ -143,8 +139,9 @@ export function SPSearchBar({
         accessibilityHint="Type to search for poses"
         autoCorrect={false}
         autoCapitalize="none"
+        editable={!readOnly}
       />
-      {localText.length > 0 && (
+      {localText.length > 0 && !readOnly && (
         <Pressable
           onPress={handleClear}
           style={styles.clearButton}
@@ -155,7 +152,7 @@ export function SPSearchBar({
           <SPIcon name="close" size={14} color={placeholderColor} strokeWidth={2.4} />
         </Pressable>
       )}
-    </View>
+    </Pressable>
   );
 }
 

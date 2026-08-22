@@ -100,6 +100,11 @@ function TabButton({ item, isFocused, activeColor, inactiveColor, onPress }: Tab
 import { useUiVisibilityStore } from '@/stores/uiVisibilityStore';
 
 function FloatingGlassTabBar({ state, navigation }: any) {
+  const currentRouteName = state.routes[state.index]?.name;
+  if (currentRouteName === 'camera') {
+    return null;
+  }
+
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const isCapturing = useUiVisibilityStore((s) => s.isCapturing);

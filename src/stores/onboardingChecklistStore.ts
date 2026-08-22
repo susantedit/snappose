@@ -66,7 +66,7 @@ function loadPersistedState(): {
   } catch {}
   return {
     steps: { ...DEFAULT_STEPS },
-    isCollapsed: false,
+    isCollapsed: true,
     isDismissed: false,
   };
 }

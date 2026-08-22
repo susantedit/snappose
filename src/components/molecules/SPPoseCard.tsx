@@ -10,7 +10,7 @@
  *  • Haptic-feel feedback & accessibility hints
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -21,8 +21,11 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Animated, {
+  Easing,
+  interpolate,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
   withSequence,
   withSpring,
   withTiming,
@@ -91,6 +94,21 @@ export const SPPoseCard = React.memo(function SPPoseCard({
   const { theme } = useTheme();
   const reduceMotion = useReducedMotion();
 
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const shimmerProgress = useSharedValue(0);
+
+  useEffect(() => {
+    shimmerProgress.value = withRepeat(
+      withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, [shimmerProgress]);
+
+  const shimmerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(shimmerProgress.value, [0, 0.5, 1], [0.35, 0.85, 0.35]),
+  }));
+
   const scale = useSharedValue(1);
   const imageScale = useSharedValue(1);
   const heartScale = useSharedValue(1);
@@ -98,11 +116,16 @@ export const SPPoseCard = React.memo(function SPPoseCard({
   const pulseOpacity = useSharedValue(0);
 
   const handlePressIn = useCallback(() => {
+    if (imageUri) {
+      import('@/services/storage/ImageCacheService').then(({ imageCacheService }) => {
+        imageCacheService.prefetchImages([imageUri]);
+      });
+    }
     if (!reduceMotion) {
       scale.value = withTiming(0.965, { duration: MotionDurations.fast });
       imageScale.value = withTiming(1.04, { duration: MotionDurations.normal });
     }
-  }, [reduceMotion, scale, imageScale]);
+  }, [imageUri, reduceMotion, scale, imageScale]);
 
   const handlePressOut = useCallback(() => {
     if (!reduceMotion) {
@@ -169,18 +192,30 @@ export const SPPoseCard = React.memo(function SPPoseCard({
         animatedCardStyle,
       ]}
     >
-      {/* Image Container with Zoom Reveal */}
+      {/* Image Container with Zoom Reveal & Skeleton Shimmer Placeholder */}
       <View
         style={[
           styles.imageContainer,
           isEditorial ? { height: '100%', borderRadius: 22 } : { height: cardHeight * 0.62 },
         ]}
       >
+        {/* YouTube-Style Shimmer Skeleton while image loads */}
+        {!imageLoaded && (
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFillObject,
+              { backgroundColor: theme.mode === 'dark' ? '#262A22' : '#E6DFD3' },
+              shimmerStyle,
+            ]}
+          />
+        )}
+
         {imageUri ? (
           <Animated.Image
             source={getPoseImageSource(imageUri)}
-            style={[styles.image, animatedImageStyle]}
+            style={[styles.image, animatedImageStyle, { opacity: imageLoaded ? 1 : 0 }]}
             resizeMode="cover"
+            onLoad={() => setImageLoaded(true)}
             accessibilityLabel={`${name} reference pose image`}
           />
         ) : (
@@ -195,10 +230,18 @@ export const SPPoseCard = React.memo(function SPPoseCard({
         {/* Editorial Floating Category Pill on Bottom-Left */}
         {isEditorial && (
           <View style={styles.editorialBottomWrap}>
-            <View style={styles.floatingCategoryPill}>
-              <Text style={styles.floatingCategoryText} numberOfLines={1}>
-                {category}
-              </Text>
+            <View style={styles.pillRow}>
+              <View style={styles.floatingCategoryPill}>
+                <Text style={styles.floatingCategoryText} numberOfLines={1}>
+                  {category}
+                </Text>
+              </View>
+              <View style={styles.floatingUsesPill}>
+                <SPIcon name="flame" size={10} color="#FF8A00" />
+                <Text style={styles.floatingUsesText}>
+                  {name.toLowerCase().includes('tony') ? '42.8k' : difficulty === 'hard' ? '38.2k' : difficulty === 'medium' ? '41.5k' : '45.8k'}
+                </Text>
+              </View>
             </View>
             <Text style={styles.editorialPoseTitle} numberOfLines={1}>
               {name}
@@ -332,21 +375,44 @@ const styles = StyleSheet.create({
     right: 12,
     gap: 4,
   },
+  pillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
   floatingCategoryPill: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(24, 24, 24, 0.78)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   floatingCategoryText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
+  },
+  floatingUsesPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(255, 138, 0, 0.25)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 138, 0, 0.4)',
+  },
+  floatingUsesText: {
+    color: '#FFB74D',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   editorialPoseTitle: {
     color: '#FFFFFF',

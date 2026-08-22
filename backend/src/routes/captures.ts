@@ -90,6 +90,43 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
   }
 });
 
+// POST /captures/batch (batch sync captures recorded while offline)
+router.post('/batch', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { count = 1 } = req.body;
+    const batchCount = Math.min(Math.max(1, parseInt(String(count), 10) || 1), 50);
+
+    let user = await UserModel.findOne({ uid: req.userId });
+    if (!user) {
+      user = await UserModel.create({ uid: req.userId, isAnonymous: true });
+    }
+
+    const now = Date.now();
+    if (now - user.captureStats.windowStartTime >= SIX_HOURS_MS) {
+      user.captureStats.windowStartTime = now;
+      user.captureStats.windowCaptureCount = 0;
+      user.captureStats.bonusCaptures = 0;
+    }
+
+    user.captureStats.windowCaptureCount += batchCount;
+    user.captureStats.totalCaptures += batchCount;
+    await user.save();
+
+    const maxAllowed = BASE_LIMIT + user.captureStats.bonusCaptures;
+    const remaining = Math.max(0, maxAllowed - user.captureStats.windowCaptureCount);
+
+    res.json(
+      success({
+        syncedCount: batchCount,
+        totalCaptures: user.captureStats.totalCaptures,
+        remaining,
+      })
+    );
+  } catch (err) {
+    res.status(500).json(error('INTERNAL_ERROR', 'Failed to batch sync captures'));
+  }
+});
+
 // POST /captures/bonus (rewarded ad completion -> grant +5 bonus captures)
 router.post('/bonus', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {

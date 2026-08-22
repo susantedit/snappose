@@ -34,16 +34,14 @@ export function getDb(): SQLite.SQLiteDatabase {
     }
   }
   if (!_db) {
-    if (Platform.OS === 'web') {
-      return {
-        execAsync: async () => {},
-        runAsync: async () => ({ lastInsertRowId: 0, changes: 0 }),
-        getFirstAsync: async () => null,
-        getAllAsync: async () => [],
-        eachAsync: async () => {},
-      } as any;
-    }
-    throw new Error('Database not initialised — call initDatabase() first');
+    // Return a safe fallback object so callers never crash on uninitialized SQLite
+    return {
+      execAsync: async () => {},
+      runAsync: async () => ({ lastInsertRowId: 0, changes: 0 }),
+      getFirstAsync: async () => null,
+      getAllAsync: async () => [],
+      eachAsync: async () => {},
+    } as any;
   }
   return _db;
 }

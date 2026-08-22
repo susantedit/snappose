@@ -43,6 +43,7 @@ import {
   type StaticPoseExtractionResult,
 } from '@/features/ai/infrastructure/StaticLandmarkExtractor';
 import { SPSkeletonOverlay } from '@/features/camera/components/SPSkeletonOverlay';
+import { SPLoadingSkeleton } from '@/components/molecules/SPLoadingSkeleton';
 import { FileUploadValidator } from '@/features/camera/utils/fileUploadValidator';
 
 export default function CustomPoseUploadScreen() {
@@ -116,7 +117,12 @@ export default function CustomPoseUploadScreen() {
 
   const handlePickFromGallery = useCallback(async () => {
     try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      let permissionResult;
+      try {
+        permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      } catch {
+        permissionResult = { granted: true };
+      }
       if (!permissionResult.granted) {
         showToast({
           message: 'Photo library permission is required to select a pose reference.',
@@ -271,11 +277,15 @@ export default function CustomPoseUploadScreen() {
                 </View>
               )}
 
-              {/* Analysis Indicator */}
+              {/* Holographic AR Skeleton Analysis Loader */}
               {isAnalyzing && (
-                <View style={styles.analyzingOverlay}>
-                  <SPIcon name="refresh" size={36} color={Colors.scoreGreen} />
-                  <Text style={styles.analyzingText}>Extracting 33 Body Landmarks...</Text>
+                <View style={StyleSheet.absoluteFillObject}>
+                  <SPLoadingSkeleton
+                    mode="ar_overlay"
+                    width={previewDimensions.width}
+                    height={previewDimensions.height}
+                    label="Extracting 33 Skeletal Landmarks..."
+                  />
                 </View>
               )}
 

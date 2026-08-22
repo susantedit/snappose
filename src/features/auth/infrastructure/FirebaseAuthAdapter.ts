@@ -108,7 +108,17 @@ export class FirebaseAuthAdapter implements AuthAdapter {
   async signInWithGoogle(): Promise<AppUser> {
     const authFn = getAuth();
     if (!authFn) {
-      return this.localUser!;
+      const googleUser: AppUser = {
+        uid: 'user_google_demouser',
+        displayName: 'Google Photographer',
+        email: 'user@gmail.com',
+        photoURL: null,
+        provider: 'google',
+        isAnonymous: false,
+      };
+      this.localUser = googleUser;
+      await this.saveTokens(googleUser.uid, 'mock_google_token');
+      return googleUser;
     }
     try {
       const currentUser = authFn().currentUser;
@@ -130,7 +140,17 @@ export class FirebaseAuthAdapter implements AuthAdapter {
   async signInWithEmail(email: string, password: string): Promise<AppUser> {
     const authFn = getAuth();
     if (!authFn) {
-      return this.localUser!;
+      const emailUser: AppUser = {
+        uid: `user_${email.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        displayName: email.split('@')[0] || 'Photographer',
+        email,
+        photoURL: null,
+        provider: 'email',
+        isAnonymous: false,
+      };
+      this.localUser = emailUser;
+      await this.saveTokens(emailUser.uid, 'mock_email_token');
+      return emailUser;
     }
     try {
       const userCredential = await authFn().signInWithEmailAndPassword(email, password);
@@ -207,13 +227,14 @@ export class FirebaseAuthAdapter implements AuthAdapter {
     if (!authFn) {
       const guest: AppUser = {
         uid: `local_user_${Date.now()}`,
-        displayName: displayName || 'POSEHANUM User',
+        displayName: displayName || email.split('@')[0] || 'POSEHANUM User',
         email,
         photoURL: null,
         provider: 'email',
         isAnonymous: false,
       };
       this.localUser = guest;
+      await this.saveTokens(guest.uid, 'mock_signup_token');
       return guest;
     }
     try {

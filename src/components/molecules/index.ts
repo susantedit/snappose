@@ -14,5 +14,7 @@ export type { SPScoreBadgeProps, SPScoreBadgeSize, ScoreBand } from './SPScoreBa
 export { SPSearchBar } from './SPSearchBar';
 export { SPSkeletonCard, SPSkeletonList } from './SPSkeletonCard';
 export type { SPSkeletonCardProps, SPSkeletonCardVariant } from './SPSkeletonCard';
+export { SPLoadingSkeleton } from './SPLoadingSkeleton';
+export type { SPLoadingSkeletonProps } from './SPLoadingSkeleton';
 export { SPToast, useToast } from './SPToast';
 export type { SPToastProps, SPToastVariant, SPToastPosition, ToastState } from './SPToast';

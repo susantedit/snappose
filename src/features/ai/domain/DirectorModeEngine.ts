@@ -230,12 +230,12 @@ export class DirectorModeEngine {
     lightingPercent: number,
     faceScore: number,
   ): SnapScoreBreakdown {
-    const poseScore = Math.min(99, Math.max(60, Math.round(poseMatchPercent)));
-    const compositionScore = Math.min(99, Math.max(65, Math.round(poseMatchPercent * 0.95 + 4)));
-    const lightingScore = Math.min(99, Math.max(60, Math.round(lightingPercent)));
-    const distanceScore = Math.min(99, Math.max(70, Math.round(poseMatchPercent * 0.98)));
-    const expressionScore = Math.min(99, Math.max(60, Math.round(faceScore || 88)));
-    const backgroundScore = Math.min(99, Math.max(75, Math.round(compositionScore * 0.96)));
+    const poseScore = Math.min(99, Math.max(0, Math.round(poseMatchPercent)));
+    const compositionScore = Math.min(99, Math.max(0, Math.round(poseMatchPercent * 0.95 + (poseMatchPercent > 0 ? 4 : 0))));
+    const lightingScore = Math.min(99, Math.max(0, Math.round(lightingPercent)));
+    const distanceScore = Math.min(99, Math.max(0, Math.round(poseMatchPercent * 0.98)));
+    const expressionScore = Math.min(99, Math.max(0, Math.round(faceScore || (poseMatchPercent > 0 ? 88 : 0))));
+    const backgroundScore = Math.min(99, Math.max(0, Math.round(compositionScore * 0.96)));
 
     const totalSnapScore = Math.round(
       poseScore * 0.3 +

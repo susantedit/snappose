@@ -66,15 +66,26 @@ export class NotificationIntelligenceEngine {
         if (inactivityDays < minDays) return false;
       }
 
-      // High Score constraints
-      if (msg.category === 'HIGH_SCORE') {
-        const minScore = msg.minScore ?? 80;
-        if (context.bestScore < minScore) return false;
+      // Score range constraints (Low, Medium, High, Perfect)
+      if (msg.minScore !== undefined) {
+        const scoreToCheck = context.lastAttemptScore ?? context.bestScore;
+        if (scoreToCheck < msg.minScore) return false;
+      }
+      if (msg.maxScore !== undefined) {
+        const scoreToCheck = context.lastAttemptScore ?? context.bestScore;
+        if (scoreToCheck > msg.maxScore) return false;
       }
 
-      // Milestone constraints
-      if (msg.category === 'MILESTONE' && msg.milestoneThreshold) {
-        if (context.totalAttempts < msg.milestoneThreshold) return false;
+      // Streak constraints
+      if (msg.minStreakDays !== undefined) {
+        const currentStreak = context.streakDays ?? 0;
+        if (currentStreak < msg.minStreakDays) return false;
+      }
+
+      // Repeated failed attempts constraints
+      if (msg.minRepeatedAttempts !== undefined) {
+        const failedCount = context.recentFailedAttemptsCount ?? 0;
+        if (failedCount < msg.minRepeatedAttempts) return false;
       }
 
       // Days of week filter
@@ -85,6 +96,13 @@ export class NotificationIntelligenceEngine {
       // Time window filter
       if (msg.timeWindow && msg.timeWindow !== 'any' && msg.timeWindow !== currentTimeWindow) {
         return false;
+      }
+
+      // Tone preference filter
+      if (preferences.preferredTone && preferences.preferredTone !== 'all') {
+        if (msg.tone !== preferences.preferredTone) {
+          return false;
+        }
       }
 
       return true;

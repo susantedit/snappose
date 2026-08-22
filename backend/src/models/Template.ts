@@ -31,6 +31,7 @@ export interface ITemplate extends Document {
   uses: number;
   remixes: number;
   status: string;
+  reportCount?: number;
   moderationStatus: ModerationStatus;
   visibility: TemplateVisibility;
   createdAt: Date;
@@ -66,6 +67,7 @@ const TemplateSchema = new Schema<ITemplate>(
     uses: { type: Number, default: 0, index: true },
     remixes: { type: Number, default: 0, index: true },
     status: { type: String, default: 'published', index: true },
+    reportCount: { type: Number, default: 0 },
     moderationStatus: {
       type: String,
       enum: ['PENDING', 'APPROVED', 'REJECTED', 'REMOVED'],

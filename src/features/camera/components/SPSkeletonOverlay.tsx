@@ -16,6 +16,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Canvas, Line, vec } from '@shopify/react-native-skia';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import type { NormalisedLandmarks, PoseScore, GuidanceCue } from '@/features/ai/types';
+import { SPLoadingSkeleton } from '@/components/molecules/SPLoadingSkeleton';
 import { LM } from '@/features/ai/domain/PoseScoreCalculator';
 import { Colors, BorderRadius, Spacing, Typography } from '@/constants/designTokens';
 
@@ -115,6 +116,8 @@ export interface SPSkeletonOverlayProps {
   containerWidth: number;
   /** Height of the overlay container in dp (matches camera preview height). */
   containerHeight: number;
+  /** Optional loading skeleton state during MediaPipe initialization. */
+  isLoading?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,9 +177,28 @@ export function SPSkeletonOverlay({
   guidanceCue,
   containerWidth,
   containerHeight,
+  isLoading,
 }: SPSkeletonOverlayProps) {
-  // Nothing to render without landmarks
-  if (!landmarks || containerWidth <= 0 || containerHeight <= 0) {
+  if (isLoading) {
+    return (
+      <View
+        style={[styles.overlay, { width: containerWidth, height: containerHeight }]}
+        pointerEvents="none"
+      >
+        <SPLoadingSkeleton
+          mode="ar_overlay"
+          width={containerWidth}
+          height={containerHeight}
+          label="Initializing MediaPipe AR Skeleton..."
+        />
+      </View>
+    );
+  }
+
+  const rawLms = (landmarks as any).landmarks ?? landmarks;
+  const lms = Array.isArray(rawLms) ? rawLms : [];
+
+  if (lms.length < 33) {
     return (
       <View
         style={[styles.overlay, { width: containerWidth, height: containerHeight }]}
@@ -189,8 +211,6 @@ export function SPSkeletonOverlay({
     );
   }
 
-  const lms = landmarks.landmarks;
-
   return (
     <View
       style={[styles.overlay, { width: containerWidth, height: containerHeight }]}
@@ -201,12 +221,13 @@ export function SPSkeletonOverlay({
         {SEGMENTS.map((seg, idx) => {
           const lmA = lms[seg.a];
           const lmB = lms[seg.b];
+          if (!lmA || !lmB) return null;
+
+          const visA = lmA.visibility ?? 1.0;
+          const visB = lmB.visibility ?? 1.0;
 
           // Skip segments with low-confidence landmarks
-          if (
-            lmA.visibility < VISIBILITY_THRESHOLD ||
-            lmB.visibility < VISIBILITY_THRESHOLD
-          ) {
+          if (visA < VISIBILITY_THRESHOLD || visB < VISIBILITY_THRESHOLD) {
             return null;
           }
 

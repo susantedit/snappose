@@ -1,19 +1,21 @@
 /**
- * useOnlineStatus — lightweight connectivity hook.
+ * useOnlineStatus & useNetworkState — Robust network state monitoring hooks.
  *
- * Since neither @react-native-community/netinfo nor expo-network is installed,
- * we poll a lightweight HEAD request to detect online/offline state.
- * Falls back gracefully so the app never crashes on network errors.
+ * Implements tri-state connection status: 'ONLINE' | 'OFFLINE' | 'CONNECTING'.
+ * Listens to AppState changes and performs throttled probes with timeout protection.
+ * Never throws errors or crashes during network disconnects.
  *
- * [Req 4.4]
+ * [Req 4.4, Part 6]
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 
+export type NetworkState = 'ONLINE' | 'OFFLINE' | 'CONNECTING';
+
 const PROBE_URL = 'https://clients3.google.com/generate_204';
-const POLL_INTERVAL_MS = 10_000; // recheck every 10 s when active
-const PROBE_TIMEOUT_MS = 5_000;
+const POLL_INTERVAL_MS = 15_000; // recheck every 15s when active
+const PROBE_TIMEOUT_MS = 3_000;
 
 async function probeConnectivity(): Promise<boolean> {
   try {
@@ -31,22 +33,23 @@ async function probeConnectivity(): Promise<boolean> {
   }
 }
 
-export function useOnlineStatus(): boolean {
-  const [isOnline, setIsOnline] = useState(true); // optimistic start
+/**
+ * Returns 'ONLINE' | 'OFFLINE' | 'CONNECTING' tri-state network status.
+ */
+export function useNetworkState(): NetworkState {
+  const [networkState, setNetworkState] = useState<NetworkState>('ONLINE');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
-  const check = () => {
-    probeConnectivity().then((online) => {
-      setIsOnline(online);
-    });
-  };
+  const check = useCallback(async () => {
+    setNetworkState((prev) => (prev === 'OFFLINE' ? 'CONNECTING' : prev));
+    const online = await probeConnectivity();
+    setNetworkState(online ? 'ONLINE' : 'OFFLINE');
+  }, []);
 
   useEffect(() => {
-    // Initial check
     check();
 
-    // Poll while app is active
     intervalRef.current = setInterval(() => {
       if (appStateRef.current === 'active') {
         check();
@@ -56,7 +59,6 @@ export function useOnlineStatus(): boolean {
     const sub = AppState.addEventListener('change', (nextState) => {
       appStateRef.current = nextState;
       if (nextState === 'active') {
-        // Immediate recheck when app comes to foreground
         check();
       }
     });
@@ -65,8 +67,15 @@ export function useOnlineStatus(): boolean {
       if (intervalRef.current) clearInterval(intervalRef.current);
       sub.remove();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [check]);
 
-  return isOnline;
+  return networkState;
+}
+
+/**
+ * Backwards-compatible boolean online status hook.
+ */
+export function useOnlineStatus(): boolean {
+  const state = useNetworkState();
+  return state === 'ONLINE';
 }

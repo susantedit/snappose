@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import dotenv from 'dotenv';
 import { connectDB } from './config/db';
+import { initFirebaseAdmin } from './config/firebaseAdmin';
 import posesRouter from './routes/poses';
 import categoriesRouter from './routes/categories';
 import favoritesRouter from './routes/favorites';
@@ -11,9 +12,13 @@ import capturesRouter from './routes/captures';
 import configRouter from './routes/config';
 import feedbackRouter from './routes/feedback';
 import templatesRouter from './routes/templates';
+import aiRouter from './routes/ai';
 import { success } from './utils/response';
 
 dotenv.config();
+
+// Initialize Firebase Admin SDK for real JWT verification
+initFirebaseAdmin();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -48,6 +53,7 @@ app.use('/api/captures', capturesRouter);
 app.use('/api/app-config', configRouter);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/templates', templatesRouter);
+app.use('/api/ai', aiRouter);
 
 // Initialize DB and start server
 connectDB().then(() => {

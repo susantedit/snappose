@@ -127,9 +127,13 @@ export function useCapturePhoto(
         const aiScore = Math.round(options.aiScore ?? 0);
 
         // ── Step 3: Save to device gallery ────────────────────────────────
-        // MediaLibrary requires the MEDIA_LIBRARY permission; if it has not
-        // been granted the call throws — the outer try/catch will handle it.
-        await MediaLibrary.saveToLibraryAsync(photoUri);
+        // MediaLibrary requires full permissions; in Expo Go on Android 13+ it may throw.
+        // We catch it so SQLite insert & state updates are not blocked.
+        try {
+          await MediaLibrary.saveToLibraryAsync(photoUri);
+        } catch (saveErr) {
+          console.warn('[useCapturePhoto] MediaLibrary.saveToLibraryAsync skipped/failed:', saveErr);
+        }
 
         // ── Step 4: Insert into SQLite ─────────────────────────────────────
         const photoId = generatePhotoId();

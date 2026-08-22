@@ -20,7 +20,7 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> => 
   assetBundlePatterns: ['**/*'],
   ios: {
     supportsTablet: false,
-    bundleIdentifier: 'com.example.snappose',
+    bundleIdentifier: 'com.snappose.app',
     infoPlist: {
       NSCameraUsageDescription:
         'POSEHANUM needs camera access to overlay pose guides and capture photos.',
@@ -33,7 +33,7 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> => 
     },
   },
   android: {
-    package: 'com.example.snappose',
+    package: 'com.snappose.app',
     versionCode: 1,
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
@@ -94,8 +94,9 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> => 
         },
       },
     ],
-    '@react-native-firebase/app',
-    '@react-native-firebase/crashlytics',
+    ...(hasGoogleServices
+      ? ['@react-native-firebase/app', '@react-native-firebase/crashlytics']
+      : []),
   ],
   'react-native-google-mobile-ads': {
     android_app_id: process.env.EXPO_PUBLIC_ADMOB_APP_ID,

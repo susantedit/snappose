@@ -51,6 +51,7 @@ import { mmkv } from '@/database/mmkv/mmkvClient';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { usePrivacyData } from '@/features/privacy';
 import type { OutfitCategory } from '@/features/personalization';
+import type { NotificationToneFilter } from '@/features/notifications/types';
 
 const HORIZONTAL_PADDING = Spacing.md;
 
@@ -506,6 +507,13 @@ export default function SettingsScreen() {
           <View style={styles.sectionCards}>
             <SettingRow
               iconName="bell"
+              label="Notification Center & History"
+              subtitle="View delivered alerts, snooze, or filter history"
+              value={useNotificationStore.getState().unreadCount > 0 ? `${useNotificationStore.getState().unreadCount} New` : 'View All'}
+              onPress={() => router.push('/notifications')}
+            />
+            <SettingRow
+              iconName="bell"
               label="Daily POSEHANUM Reminders"
               subtitle="Clever, contextual daily pose inspiration"
               isSwitch
@@ -520,6 +528,64 @@ export default function SettingsScreen() {
             />
             {notifPreferences.enabled && (
               <>
+                <SettingRow
+                  iconName="sparkles"
+                  label="Personality Tone Preference"
+                  subtitle="Filter notification tone (Playful, Clever, Teasing, etc.)"
+                  value={notifPreferences.preferredTone ? notifPreferences.preferredTone.toUpperCase() : 'ALL'}
+                  onPress={() => {
+                    const tones: NotificationToneFilter[] = [
+                      'all',
+                      'roasted',
+                      'funny',
+                      'crispy',
+                      'savage',
+                      'confident',
+                      'hype',
+                      'coaching',
+                      'achievement',
+                      'playful',
+                      'positive',
+                      'motivational',
+                      'clever',
+                      'teasing',
+                    ];
+                    const nextIdx = (tones.indexOf(notifPreferences.preferredTone) + 1) % tones.length;
+                    const selected = tones[nextIdx];
+                    updateNotifPreferences({ preferredTone: selected });
+                    showToast({ message: `Personality tone: ${selected.toUpperCase()}`, variant: 'info' });
+                  }}
+                />
+                <SettingRow
+                  iconName="clock"
+                  label="Delivery Frequency Mode"
+                  subtitle="Daily, every-other-day, or smart AI adaptive"
+                  value={
+                    notifPreferences.preferredFrequency === 'smart_ai'
+                      ? 'Smart AI'
+                      : notifPreferences.preferredFrequency === 'every_other_day'
+                      ? 'Every 2 Days'
+                      : 'Daily'
+                  }
+                  onPress={() => {
+                    const freqs: ('daily' | 'every_other_day' | 'smart_ai')[] = ['daily', 'every_other_day', 'smart_ai'];
+                    const nextIdx = (freqs.indexOf(notifPreferences.preferredFrequency) + 1) % freqs.length;
+                    const selected = freqs[nextIdx];
+                    updateNotifPreferences({ preferredFrequency: selected });
+                    showToast({ message: `Frequency mode set to ${selected.replace('_', ' ').toUpperCase()}`, variant: 'info' });
+                  }}
+                />
+                <SettingRow
+                  iconName="haptics"
+                  label="Notification Sound & Haptics"
+                  subtitle="Play subtle chime & vibration on alert delivery"
+                  isSwitch
+                  switchValue={notifPreferences.soundEnabled}
+                  onSwitchChange={(val) => {
+                    updateNotifPreferences({ soundEnabled: val, hapticsEnabled: val });
+                    showToast({ message: val ? 'Notification sound & haptics enabled' : 'Sound & haptics disabled', variant: 'info' });
+                  }}
+                />
                 <SettingRow
                   iconName="sparkles"
                   label="Pose Challenges"

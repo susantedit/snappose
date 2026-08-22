@@ -31,6 +31,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import * as MediaLibrary from 'expo-media-library';
+import { requestSafeMediaLibraryPermission } from '../../utils/safeMediaLibrary';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import Animated, {
@@ -113,17 +114,8 @@ function useGalleryPhotos() {
     setLoading(true);
     setError(null);
     try {
-      let status = 'denied';
-      try {
-        const res = await MediaLibrary.requestPermissionsAsync(false, ['photo']);
-        status = res.status;
-      } catch (permError) {
-        // Fallback for Expo Go permission restrictions on Android 13+
-        try {
-          const res = await MediaLibrary.requestPermissionsAsync(true);
-          status = res.status;
-        } catch {}
-      }
+      const res = await requestSafeMediaLibraryPermission(false, ['photo']);
+      const status = res.status;
 
       if (status !== 'granted') {
         setPermissionGranted(false);

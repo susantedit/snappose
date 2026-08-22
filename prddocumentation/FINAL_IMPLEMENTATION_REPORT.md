@@ -45,7 +45,8 @@ All existing core features across all application domains were audited, protecte
 ## 🚫 3. Hardcoded / Fake Behavior Elimination
 
 - **Synthetic Landmark Generators**: `generateLiveTrackingLandmarks` completely eliminated from codebase.
-- **Random Scores in AI Modules**: Zero occurrences of `Math.random()` in any scoring, matching, or landmark pipeline.
+- **Random Scores in AI Modules**: Zero occurrences of `Math.random()` in any scoring, matching, or landmark pipeline (replaced `Math.random()` in `SPShotBuilder.tsx` with deterministic pose difficulty penalty formula).
+- **Artificial Min Score Floor**: Removed `Math.max(60, ...)` floor from `DirectorModeEngine.ts`'s `calculateSnapScore`; zero person yields exact 0%.
 - **Legacy Fallback Scores**: Removed `matchScore: 94` fallback from `camera.tsx`; all post-capture scores are calculated dynamically from captured landmarks.
 - **Face Switch & Segmentation Truth**: `FaceSwitchProvider` and `BackgroundSegmentationProvider` truthfully return `UNAVAILABLE_ON_CURRENT_BUILD` until neural weights are compiled.
 

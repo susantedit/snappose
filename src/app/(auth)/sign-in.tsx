@@ -107,8 +107,7 @@ export default function SignInScreen() {
     if (!email.trim() || !password) return;
     clearError();
     await signInWithEmail(email.trim(), password);
-    const user = useAuthStore.getState().user;
-    if (user) router.replace('/(tabs)');
+    router.replace('/(tabs)');
   };
 
   const handleGuestSignIn = async () => {
@@ -120,8 +119,7 @@ export default function SignInScreen() {
   const handleGoogleSignIn = async () => {
     clearError();
     await signInWithGoogle();
-    const user = useAuthStore.getState().user;
-    if (user) router.replace('/(tabs)');
+    router.replace('/(tabs)');
   };
 
   return (

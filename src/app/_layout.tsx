@@ -7,6 +7,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, useTheme } from '@/constants/theme';
 import { mmkv } from '@/database/mmkv/mmkvClient';
 import { MMKV_KEYS } from '@/database/mmkv/keys';
+import { useAuthStore } from '@/stores/authStore';
+import { AnalyticsService } from '@/services/firebase/analytics';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,10 +21,26 @@ const queryClient = new QueryClient({
 });
 
 import { initDatabase } from '@/database/sqlite/db';
+import { SPOfflineBanner } from '@/components/molecules/SPOfflineBanner';
 import { SPCookieConsentBanner } from '@/components/molecules/SPCookieConsentBanner';
 
 function InnerLayout() {
   const { theme } = useTheme();
+  const { user, initialize } = useAuthStore();
+
+  // Wire Firebase Analytics user ID whenever auth state changes
+  useEffect(() => {
+    AnalyticsService.setUserId(user?.uid ?? null);
+    if (user?.uid) {
+      AnalyticsService.setUserProperty('is_anonymous', user.isAnonymous ? 'true' : 'false');
+    }
+  }, [user?.uid, user?.isAnonymous]);
+
+  // Initialize Firebase Auth listener
+  useEffect(() => {
+    const unsubscribe = initialize();
+    return unsubscribe;
+  }, [initialize]);
 
   useEffect(() => {
     const isFirst = mmkv.getBoolean(MMKV_KEYS.FIRST_LAUNCH);
@@ -117,10 +135,18 @@ function InnerLayout() {
             animation: 'slide_from_right',
           }}
         />
+        <Stack.Screen
+          name="notifications/index"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}
+        />
         <Stack.Screen name="+not-found" />
       </Stack>
 
       <StatusBar style={theme.colors.statusBar} />
+      <SPOfflineBanner />
       <SPCookieConsentBanner />
     </>
   );

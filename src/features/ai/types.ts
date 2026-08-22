@@ -56,10 +56,12 @@ export type GuidanceCue =
   | 'Adjusting';
 
 export interface CameraFrame {
-  data: Uint8Array;
-  width: number;
-  height: number;
-  timestamp: number;
+  data?: Uint8Array;
+  width?: number;
+  height?: number;
+  timestamp?: number;
+  landmarks?: Landmark[];
+  personCount?: number;
 }
 
 export type LandmarkSet = PoseLandmarks;

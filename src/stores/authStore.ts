@@ -96,7 +96,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   sendEmailVerification: async () => {
     set({ isLoading: true, error: null });
     try {
-      // In local mode or mock Firebase adapter, simulated email verification dispatch
+      await firebaseAuthAdapter.sendEmailVerification();
       set({ isLoading: false });
     } catch (err: any) {
       set({ error: err?.message || 'Failed to send verification email', isLoading: false });

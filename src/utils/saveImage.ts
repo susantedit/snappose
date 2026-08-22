@@ -5,6 +5,7 @@
 
 import { Platform } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
+import { requestSafeMediaLibraryPermission } from './safeMediaLibrary';
 import * as FileSystem from 'expo-file-system';
 import { getPoseImageUri } from './imageUtils';
 
@@ -57,7 +58,7 @@ export async function saveImageToGallery(
 
   // ── Native (iOS & Android) ────────────────────────────────────────────────
   try {
-    const { status } = await MediaLibrary.requestPermissionsAsync(true);
+    const { status } = await requestSafeMediaLibraryPermission(true);
     if (status !== 'granted') {
       return {
         success: false,

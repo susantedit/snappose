@@ -2,7 +2,10 @@
  * SPShotBuilder — Contextual Shot Builder & Instant Recipe Engine.
  *
  * Allows users to select Location + Vibe + Shot Type and immediately
- * generates a complete POSEHANUM Shot Recipe with Snap Score™ prediction.
+ * generates a complete POSEHANUM Shot Recipe with target camera angle & directives.
+ *
+ * NOTE: Does NOT display simulated/fake percentage scores. Real match percentages
+ * are only calculated on the live camera stream against detected landmarks.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -35,7 +38,7 @@ export function SPShotBuilder() {
   const [vibe, setVibe] = useState<VibeOption>('Casual');
   const [shotType, setShotType] = useState<ShotTypeOption>('Full Body');
 
-  // Compute Instant Shot Recipe
+  // Compute Instant Shot Recipe from real pose dataset metadata
   const shotRecipe = useMemo(() => {
     // Find best pose matching location/category
     const catId = location.toLowerCase();
@@ -43,19 +46,17 @@ export function SPShotBuilder() {
       SNAP_POSE_DATASET.find((p) => p.categoryId === catId || p.tags.includes(catId)) ||
       SNAP_POSE_DATASET[0];
 
-    const predictedScore = Math.floor(88 + Math.random() * 8);
-
     return {
       poseId: matchedPose.id,
       poseName: matchedPose.title,
-      camera: '1x • Chest height',
+      difficulty: matchedPose.difficulty.toUpperCase(),
+      camera: matchedPose.cameraAngle || '1x • Chest height',
       distance: matchedPose.estimatedDistance ? `${matchedPose.estimatedDistance}m` : '1.8m',
       light: location === 'Cafe' ? 'Window light' : location === 'Beach' ? 'Golden hour' : 'Face toward light',
       body: 'Turn 20° to 3/4 angle',
       hands: 'One hand relaxed in pocket',
       expression: vibe === 'Confident' ? 'Direct eye contact' : 'Look slightly away',
       background: `${location} depth framing`,
-      snapScorePrediction: predictedScore,
     };
   }, [location, vibe, shotType]);
 
@@ -143,9 +144,9 @@ export function SPShotBuilder() {
             <Text style={styles.recipeTag}>THE SHOT RECIPE</Text>
             <Text style={styles.recipePoseName}>{shotRecipe.poseName}</Text>
           </View>
-          <View style={styles.scoreBadge}>
-            <Text style={styles.scoreVal}>{shotRecipe.snapScorePrediction}%</Text>
-            <Text style={styles.scoreLbl}>SNAP SCORE</Text>
+          <View style={styles.difficultyBadge}>
+            <Text style={styles.difficultyVal}>{shotRecipe.difficulty}</Text>
+            <Text style={styles.difficultyLbl}>LEVEL</Text>
           </View>
         </View>
 
@@ -171,7 +172,7 @@ export function SPShotBuilder() {
 
         <AnimatedPressable onPress={handleTryShot} style={styles.tryButton} scaleTo={0.96}>
           <SPIcon name="camera" size={16} color="#FFFFFF" />
-          <Text style={styles.tryButtonText}>TRY THIS SHOT</Text>
+          <Text style={styles.tryButtonText}>TRY THIS SHOT IN CAMERA</Text>
         </AnimatedPressable>
       </Animated.View>
     </View>
@@ -181,14 +182,14 @@ export function SPShotBuilder() {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#1C1F19',
-    borderRadius: 22,
-    padding: Spacing.md,
-    marginBottom: Spacing.lg,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: Spacing.md,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   cardHeader: {
-    marginBottom: 12,
+    marginBottom: 8,
   },
   titleRow: {
     flexDirection: 'row',
@@ -198,13 +199,14 @@ const styles = StyleSheet.create({
   title: {
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
   },
   subtitle: {
     color: '#9EA495',
     fontSize: 12,
     marginTop: 2,
+    fontWeight: '400',
   },
   selectorBlock: {
     gap: 6,
@@ -213,7 +215,7 @@ const styles = StyleSheet.create({
   label: {
     color: Colors.olive,
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
     marginTop: 4,
   },
@@ -236,11 +238,11 @@ const styles = StyleSheet.create({
   pillText: {
     color: '#CCCCCC',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   pillTextActive: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '700',
   },
   recipeBox: {
     backgroundColor: 'rgba(0, 0, 0, 0.35)',
@@ -258,27 +260,30 @@ const styles = StyleSheet.create({
   recipeTag: {
     color: Colors.olive,
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.8,
   },
   recipePoseName: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '700',
   },
-  scoreBadge: {
+  difficultyBadge: {
     alignItems: 'flex-end',
     backgroundColor: 'rgba(101, 116, 74, 0.2)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(101, 116, 74, 0.3)',
   },
-  scoreVal: {
+  difficultyVal: {
     color: '#B7FF00',
-    fontSize: 16,
-    fontWeight: '900',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
-  scoreLbl: {
+  difficultyLbl: {
     color: '#A0A696',
     fontSize: 8,
     fontWeight: '700',
@@ -298,13 +303,13 @@ const styles = StyleSheet.create({
   dirKey: {
     color: '#8A9082',
     fontSize: 8,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   dirVal: {
     color: '#E0E5D8',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
     marginTop: 1,
   },
   tryButton: {
@@ -319,7 +324,7 @@ const styles = StyleSheet.create({
   tryButtonText: {
     color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
 });
