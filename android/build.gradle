@@ -20,9 +20,9 @@ allprojects {
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
   }
-  configurations.all {
-    resolutionStrategy {
-      force 'com.google.android.gms:play-services-ads:25.3.0'
+  tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+      freeCompilerArgs += ["-Xskip-metadata-version-check"]
     }
   }
 }

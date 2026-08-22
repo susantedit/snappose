@@ -10,14 +10,14 @@ const withPlayServicesAdsFix = (config: ExpoConfig): ExpoConfig => {
     if (gradleConfig.modResults.language === 'groovy') {
       const forceDep = `
 allprojects {
-    configurations.all {
-        resolutionStrategy {
-            force 'com.google.android.gms:play-services-ads:25.3.0'
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            freeCompilerArgs += ["-Xskip-metadata-version-check"]
         }
     }
 }
 `;
-      if (!gradleConfig.modResults.contents.includes('play-services-ads:25.3.0')) {
+      if (!gradleConfig.modResults.contents.includes('-Xskip-metadata-version-check')) {
         gradleConfig.modResults.contents += forceDep;
       }
     }
