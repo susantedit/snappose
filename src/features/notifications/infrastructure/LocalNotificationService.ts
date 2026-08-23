@@ -8,27 +8,63 @@
  *  - Quiet hours enforcement & fatigue backoff
  *  - Device-level capture limit notifications ("Your limit is gonna reach")
  * [Req 33, 42]
+ *
+ * Expo Go note: expo-notifications' remote-push support was removed from Expo Go
+ * in SDK 53, and merely importing the module there triggers a console error from
+ * its push-token auto-registration side-effect. Local notifications are also only
+ * partially supported in Expo Go. So we LAZY-load the module and treat Expo Go /
+ * web as "notifications unavailable" (graceful no-op). Full device-level pop-ups
+ * work in a development build or production build — which is the supported path.
  */
 
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useNotificationStore } from '@/stores/notificationStore';
 import type { NotificationSelectionResult } from '../types';
 
-// Configure foreground notification presentation for direct device-level popups.
-// expo-notifications 0.31 (SDK 54) replaced `shouldShowAlert` with
-// `shouldShowBanner` + `shouldShowList`; we set all three so a heads-up banner
-// shows in the foreground on every supported version.
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    priority: Notifications.AndroidNotificationPriority.HIGH,
-  }),
-});
+type NotificationsModule = typeof import('expo-notifications');
+
+// Expo Go reports 'storeClient'; dev/production builds report 'standalone'/'bare'.
+const IS_EXPO_GO = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+let _notifications: NotificationsModule | null = null;
+let _handlerConfigured = false;
+let _unavailable = false;
+
+/**
+ * Lazily resolves the expo-notifications module. Returns null on web, in Expo Go,
+ * or if the native module can't be loaded — callers then no-op gracefully. The
+ * foreground presentation handler is configured exactly once, on first load, so
+ * the module's import side-effects never run in Expo Go.
+ */
+function getNotifications(): NotificationsModule | null {
+  if (Platform.OS === 'web' || IS_EXPO_GO || _unavailable) return null;
+  if (_notifications) return _notifications;
+  try {
+    _notifications = require('expo-notifications') as NotificationsModule;
+    if (!_handlerConfigured) {
+      // expo-notifications 0.31+ (SDK 54) replaced `shouldShowAlert` with
+      // `shouldShowBanner` + `shouldShowList`; we set all three so a heads-up
+      // banner shows in the foreground on every supported version.
+      _notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldShowBanner: true,
+          shouldShowList: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+          priority: _notifications!.AndroidNotificationPriority.HIGH,
+        }),
+      });
+      _handlerConfigured = true;
+    }
+  } catch (e) {
+    _unavailable = true;
+    _notifications = null;
+    console.warn('[NotificationService] expo-notifications unavailable:', e);
+  }
+  return _notifications;
+}
 
 export class LocalNotificationService {
   private static instance: LocalNotificationService;
@@ -45,19 +81,30 @@ export class LocalNotificationService {
   }
 
   /**
+   * Whether real device-level notifications are supported in this runtime.
+   * False in Expo Go / web; screens can use this to show guidance instead of
+   * silently doing nothing.
+   */
+  isSupported(): boolean {
+    return getNotifications() !== null;
+  }
+
+  /**
    * Ensures a high-importance Android notification channel exists so alerts
    * appear as heads-up pop-ups (like normal apps) rather than silent tray
    * entries. No-op on iOS/web and after the first successful creation.
    */
   private async ensureAndroidChannel(): Promise<void> {
     if (Platform.OS !== 'android' || this.channelReady) return;
+    const N = getNotifications();
+    if (!N) return;
     try {
-      await Notifications.setNotificationChannelAsync('default', {
+      await N.setNotificationChannelAsync('default', {
         name: 'General',
-        importance: Notifications.AndroidImportance.MAX,
+        importance: N.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         sound: 'default',
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        lockscreenVisibility: N.AndroidNotificationVisibility.PUBLIC,
       });
       this.channelReady = true;
     } catch (e) {
@@ -70,13 +117,14 @@ export class LocalNotificationService {
    */
   async requestPermission(): Promise<boolean> {
     try {
-      if (Platform.OS === 'web') return false;
+      const N = getNotifications();
+      if (!N) return false;
       // Channel must exist before scheduling so pop-ups are heads-up.
       await this.ensureAndroidChannel();
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      const { status: existingStatus } = await N.getPermissionsAsync();
       let finalStatus = existingStatus;
       if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
+        const { status } = await N.requestPermissionsAsync();
         finalStatus = status;
       }
       return finalStatus === 'granted';
@@ -95,9 +143,11 @@ export class LocalNotificationService {
     data: Record<string, any> = {}
   ): Promise<string | null> {
     try {
-      if (Platform.OS === 'web') {
-        console.log(`[DeviceNotification Mock] ${title}: ${body}`);
-        return 'web-mock-id';
+      const N = getNotifications();
+      if (!N) {
+        // Expo Go / web: no native delivery. Log so testing still shows intent.
+        console.log(`[DeviceNotification unavailable in this runtime] ${title}: ${body}`);
+        return null;
       }
 
       const hasPerm = await this.requestPermission();
@@ -105,13 +155,13 @@ export class LocalNotificationService {
         console.warn('[NotificationService] Permission not granted for device notification');
       }
 
-      const notificationId = await Notifications.scheduleNotificationAsync({
+      const notificationId = await N.scheduleNotificationAsync({
         content: {
           title,
           body,
           data,
           sound: 'default',
-          priority: Notifications.AndroidNotificationPriority.MAX,
+          priority: N.AndroidNotificationPriority.MAX,
           vibrate: [0, 250, 250, 250],
         },
         trigger: null, // Deliver immediately as system popup
@@ -188,11 +238,11 @@ export class LocalNotificationService {
 
   async cancelAllNotifications(): Promise<void> {
     this.scheduledIds.clear();
-    if (Platform.OS !== 'web') {
-      try {
-        await Notifications.cancelAllScheduledNotificationsAsync();
-      } catch {}
-    }
+    const N = getNotifications();
+    if (!N) return;
+    try {
+      await N.cancelAllScheduledNotificationsAsync();
+    } catch {}
   }
 }
 
