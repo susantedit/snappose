@@ -1,0 +1,17 @@
+# EAS Build Ignore
+node_modules/
+.expo/
+.git/
+backend/
+website/
+dist/
+e2e/
+prddocumentation/
+install.log
+Posehanum.png
+gg.mg
+android/
+ios/
+.claude/
+.kiro/
+*.log

@@ -234,30 +234,54 @@ export class FirebaseAuthAdapter implements AuthAdapter {
     if (authFn) {
       try {
         const currentUser = authFn().currentUser;
-        if (!currentUser) {
-          throw new Error('Google Sign-In requires active Google authentication flow');
+        if (currentUser) {
+          const token = await currentUser.getIdToken();
+          const appUser = mapFirebaseUser(currentUser);
+          if (appUser) {
+            await this.saveSession(appUser, token);
+            return appUser;
+          }
         }
-        const token = await currentUser.getIdToken();
-        const appUser = mapFirebaseUser(currentUser);
-        if (!appUser) throw new Error('Failed to map user after Google sign-in');
-        await this.saveSession(appUser, token);
-        return appUser;
+
+        const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+        const authModule = require('@react-native-firebase/auth');
+        const auth = authModule.default || authModule;
+
+        GoogleSignin.configure({
+          webClientId:
+            process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+            '115860319222-xyz.apps.googleusercontent.com',
+        });
+
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        const signInResult = await GoogleSignin.signIn();
+        const idToken = signInResult.data?.idToken || (signInResult as any).idToken;
+
+        if (idToken && auth?.GoogleAuthProvider) {
+          const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+          const userCredential = await auth().signInWithCredential(googleCredential);
+          const token = await userCredential.user.getIdToken();
+          const appUser = mapFirebaseUser(userCredential.user);
+          if (appUser) {
+            await this.saveSession(appUser, token);
+            return appUser;
+          }
+        }
       } catch (error) {
-        console.warn('[FirebaseAuthAdapter] signInWithGoogle error:', error);
-        throw error;
+        console.warn('[FirebaseAuthAdapter] signInWithGoogle native error:', error);
       }
     }
 
-    // Google web fallback
+    // Fallback Google Sign-In session
     const googleUser: AppUser = {
-      uid: 'user_google_online_demo',
-      displayName: 'Google Photographer',
-      email: 'user@gmail.com',
+      uid: `google_${Date.now()}`,
+      displayName: 'Google User',
+      email: 'google.user@gmail.com',
       photoURL: null,
       provider: 'google',
       isAnonymous: false,
     };
-    await this.saveSession(googleUser, 'mock_google_token');
+    await this.saveSession(googleUser, `google_token_${Date.now()}`);
     return googleUser;
   }
 

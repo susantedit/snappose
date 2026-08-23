@@ -119,7 +119,6 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> =>
             minSdkVersion: 26,
             compileSdkVersion: 35,
             targetSdkVersion: 35,
-            buildToolsVersion: '35.0.0',
           },
         },
       ],
@@ -130,6 +129,7 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> =>
           iosAppId: admobAppId,
         },
       ],
+      '@react-native-google-signin/google-signin',
       ...(hasGoogleServices
         ? ['@react-native-firebase/app', '@react-native-firebase/crashlytics']
         : []),
@@ -141,12 +141,12 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> =>
     experiments: {
       typedRoutes: true,
     },
-    owner: 'susant11',
+    owner: 'susant9876',
     extra: {
       mongodbApiUrl: process.env.EXPO_PUBLIC_MONGODB_API_URL,
       admobAppId: admobAppId,
       eas: {
-        projectId: '7d89ac95-b79b-47ba-97fd-eef5bf30f5c9',
+        projectId: '67cafc66-29e1-4414-a258-812d7960d9c2',
       },
     },
   });

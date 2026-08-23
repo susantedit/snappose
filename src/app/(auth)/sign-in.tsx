@@ -22,7 +22,6 @@ import {
   TextInput,
   TouchableWithoutFeedback,
   View,
-  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
@@ -97,7 +96,7 @@ function InputField({
 
 export default function SignInScreen() {
   const insets = useSafeAreaInsets();
-  const { signInWithEmail, signInWithGoogle, signInAnonymously, isLoading, error, clearError } =
+  const { signInWithEmail, signInWithGoogle, isLoading, error, clearError } =
     useAuthStore();
 
   const [email, setEmail] = useState('');
@@ -119,15 +118,6 @@ export default function SignInScreen() {
     }
     await signInWithEmail(email.trim(), password);
     // The store swallows auth errors into `error`; only navigate on real success.
-    if (useAuthStore.getState().user) {
-      router.replace('/(tabs)');
-    }
-  };
-
-  const handleGuestSignIn = async () => {
-    setLocalError(null);
-    clearError();
-    await signInAnonymously();
     if (useAuthStore.getState().user) {
       router.replace('/(tabs)');
     }
@@ -231,15 +221,6 @@ export default function SignInScreen() {
               {/* Google */}
               <Pressable onPress={handleGoogleSignIn} style={styles.socialBtn} disabled={isLoading}>
                 <Text style={styles.socialBtnText}>Continue with Google</Text>
-              </Pressable>
-
-              {/* Anonymous */}
-              <Pressable onPress={handleGuestSignIn} style={styles.guestBtn} disabled={isLoading}>
-                {isLoading ? (
-                  <ActivityIndicator color="rgba(255,255,255,0.5)" size="small" />
-                ) : (
-                  <Text style={styles.guestBtnText}>Continue as Guest</Text>
-                )}
               </Pressable>
             </Animated.View>
 

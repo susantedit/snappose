@@ -24,6 +24,7 @@ const queryClient = new QueryClient({
 import { initDatabase } from '@/database/sqlite/db';
 import { SPOfflineBanner } from '@/components/molecules/SPOfflineBanner';
 import { SPCookieConsentBanner } from '@/components/molecules/SPCookieConsentBanner';
+import { AdMobAdapter } from '@/features/ads/infrastructure/AdMobAdapter';
 
 import { useSegments, router } from 'expo-router';
 
@@ -74,6 +75,9 @@ function InnerLayout() {
     }
     initDatabase().catch((err) => {
       console.warn('[RootLayout] SQLite init notice:', err);
+    });
+    AdMobAdapter.getInstance().initialize().catch((err) => {
+      console.warn('[RootLayout] AdMob init notice:', err);
     });
   }, []);
 
