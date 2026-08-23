@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { View, ActivityIndicator } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -24,9 +25,12 @@ import { initDatabase } from '@/database/sqlite/db';
 import { SPOfflineBanner } from '@/components/molecules/SPOfflineBanner';
 import { SPCookieConsentBanner } from '@/components/molecules/SPCookieConsentBanner';
 
+import { useSegments, router } from 'expo-router';
+
 function InnerLayout() {
   const { theme } = useTheme();
-  const { user, initialize } = useAuthStore();
+  const { user, isLoading, initialize } = useAuthStore();
+  const segments = useSegments();
 
   // Wire Firebase Analytics user ID whenever auth state changes
   useEffect(() => {
@@ -42,6 +46,27 @@ function InnerLayout() {
     return unsubscribe;
   }, [initialize]);
 
+  // Protected route auth guard
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === '(auth)';
+    const onboardingDone = mmkv.getBoolean(MMKV_KEYS.ONBOARDING_COMPLETED);
+    // Auth "entry" screens an already-authenticated user should never sit on.
+    // Deliberately EXCLUDES sign-up / complete-profile / verify-email so the
+    // post-signup flow (sign-up → complete-profile) isn't interrupted by an
+    // auto-redirect to the tabs the instant the new user is created.
+    const AUTH_ENTRY = ['sign-in', 'onboarding', 'splash', 'index'];
+
+    if (!user && !inAuthGroup) {
+      router.replace(onboardingDone ? '/(auth)/sign-in' : '/(auth)/onboarding');
+    } else if (user && inAuthGroup && AUTH_ENTRY.includes(segments[1] ?? '')) {
+      // Handles the session-restore race: if the listener briefly reports no
+      // user and we land on sign-in, bounce back to the app once restore lands.
+      router.replace('/(tabs)');
+    }
+  }, [user, isLoading, segments]);
+
   useEffect(() => {
     const isFirst = mmkv.getBoolean(MMKV_KEYS.FIRST_LAUNCH);
     if (isFirst === undefined) {
@@ -51,6 +76,24 @@ function InnerLayout() {
       console.warn('[RootLayout] SQLite init notice:', err);
     });
   }, []);
+
+  // Root auth-loading gate: while the auth state is resolving, show a branded
+  // loading view instead of mounting the tab navigator. This prevents the
+  // "flash of tabs/login" for users who are already signed in.
+  if (isLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: theme.colors.background,
+        }}
+      >
+        <ActivityIndicator size="large" color={theme.colors.accent} />
+      </View>
+    );
+  }
 
   return (
     <>

@@ -11,13 +11,13 @@ import {
   Dimensions,
   Image,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { router, useLocalSearchParams } from 'expo-router';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/constants/theme';
@@ -89,73 +89,73 @@ export default function CategoryScreen() {
     [isFavorite, toggleFavorite, showToast]
   );
 
+  const renderPose = useCallback(
+    ({ item, index }: { item: Pose; index: number }) => (
+      <View style={[styles.cell, { alignItems: index % 2 === 0 ? 'flex-start' : 'flex-end' }]}>
+        <SPPoseCard
+          id={item.id}
+          name={item.title}
+          category={item.category ?? item.categoryId}
+          imageUri={item.imageUrl}
+          difficulty={item.difficulty}
+          isFavorite={isFavorite(item.id)}
+          width={CARD_WIDTH}
+          height={CARD_WIDTH * 1.35}
+          onPress={handleOpenPose}
+          onFavoritePress={handleToggleFavorite}
+          onCameraPress={handleTryPose}
+        />
+      </View>
+    ),
+    [isFavorite, handleOpenPose, handleToggleFavorite, handleTryPose],
+  );
+
+  const ListHeader = (
+    <>
+      {/* Top Navigation Row */}
+      <View style={styles.topNav}>
+        <Pressable
+          onPress={() => router.back()}
+          style={[styles.backButton, { backgroundColor: isDark ? '#242424' : '#EAE4D8' }]}
+        >
+          <SPIcon name="arrowLeft" size={18} color={isDark ? '#FFF' : Colors.textPrimary} strokeWidth={2.4} />
+        </Pressable>
+        <View style={styles.headingRow}>
+          <SPIcon name={category.icon ?? 'sparkles'} size={18} color={Colors.olive} strokeWidth={2.2} />
+          <Text style={[styles.categoryHeading, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
+            {category.name}
+          </Text>
+        </View>
+        <View style={{ width: 40 }} />
+      </View>
+
+      {/* Category Hero Banner */}
+      <Animated.View entering={FadeIn.duration(350)} style={styles.heroCard}>
+        <Image source={{ uri: category.image }} style={styles.heroImg} resizeMode="cover" />
+        <View style={styles.heroOverlay} />
+        <View style={styles.heroContent}>
+          <Text style={styles.heroTitle}>{category.name} Photography</Text>
+          <Text style={styles.heroCount}>{poses.length} curated pose inspirations</Text>
+        </View>
+      </Animated.View>
+    </>
+  );
+
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.background }]}>
-      <ScrollView
+      <FlashList
+        data={poses}
+        renderItem={renderPose}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        ListHeaderComponent={ListHeader}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: insets.top + Spacing.sm,
-            paddingBottom: insets.bottom + 60,
-          },
-        ]}
-      >
-        {/* Top Navigation Row */}
-        <View style={styles.topNav}>
-          <Pressable
-            onPress={() => router.back()}
-            style={[
-              styles.backButton,
-              { backgroundColor: isDark ? '#242424' : '#EAE4D8' },
-            ]}
-          >
-            <SPIcon name="arrowLeft" size={18} color={isDark ? '#FFF' : Colors.textPrimary} strokeWidth={2.4} />
-          </Pressable>
-          <View style={styles.headingRow}>
-            <SPIcon name={category.icon ?? 'sparkles'} size={18} color={Colors.olive} strokeWidth={2.2} />
-            <Text style={[styles.categoryHeading, { color: isDark ? '#FFF' : Colors.textPrimary }]}>
-              {category.name}
-            </Text>
-          </View>
-          <View style={{ width: 40 }} />
-        </View>
-
-        {/* Category Hero Banner */}
-        <Animated.View entering={FadeIn.duration(350)} style={styles.heroCard}>
-          <Image source={{ uri: category.image }} style={styles.heroImg} resizeMode="cover" />
-          <View style={styles.heroOverlay} />
-          <View style={styles.heroContent}>
-            <Text style={styles.heroTitle}>{category.name} Photography</Text>
-            <Text style={styles.heroCount}>{poses.length} curated pose inspirations</Text>
-          </View>
-        </Animated.View>
-
-        {/* Poses Grid */}
-        <View style={styles.posesGrid}>
-          {poses.map((pose, index) => (
-            <Animated.View
-              key={pose.id}
-              entering={FadeInDown.duration(300).delay(index * 30)}
-              style={{ width: CARD_WIDTH }}
-            >
-              <SPPoseCard
-                id={pose.id}
-                name={pose.title}
-                category={pose.category ?? pose.categoryId}
-                imageUri={pose.imageUrl}
-                difficulty={pose.difficulty}
-                isFavorite={isFavorite(pose.id)}
-                width={CARD_WIDTH}
-                height={CARD_WIDTH * 1.35}
-                onPress={handleOpenPose}
-                onFavoritePress={handleToggleFavorite}
-                onCameraPress={handleTryPose}
-              />
-            </Animated.View>
-          ))}
-        </View>
-      </ScrollView>
+        contentContainerStyle={{
+          paddingHorizontal: HORIZONTAL_PADDING,
+          paddingTop: insets.top + Spacing.sm,
+          paddingBottom: insets.bottom + 60,
+        }}
+      />
 
       <SPToast {...toastProps} />
     </View>
@@ -166,8 +166,9 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  scrollContent: {
-    paddingHorizontal: HORIZONTAL_PADDING,
+  cell: {
+    flex: 1,
+    marginBottom: CARD_GAP,
   },
   topNav: {
     flexDirection: 'row',
@@ -230,11 +231,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 2,
-  },
-  posesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: CARD_GAP,
-    justifyContent: 'space-between',
   },
 });

@@ -63,4 +63,16 @@ export function initFirebaseAdmin(): void {
   }
 }
 
+/**
+ * Returns the initialized Firebase Admin namespace, or null if credentials
+ * were never configured. Performs a lazy init so callers (e.g. the auth
+ * routes) still work even if `initFirebaseAdmin()` wasn't run at boot.
+ */
+export function getFirebaseAdmin(): typeof admin | null {
+  if (!initialized && admin.apps.length === 0) {
+    initFirebaseAdmin();
+  }
+  return admin.apps.length > 0 ? admin : null;
+}
+
 export { admin };

@@ -13,6 +13,7 @@ import configRouter from './routes/config';
 import feedbackRouter from './routes/feedback';
 import templatesRouter from './routes/templates';
 import aiRouter from './routes/ai';
+import authRouter from './routes/auth';
 import { success } from './utils/response';
 
 dotenv.config();
@@ -46,6 +47,7 @@ app.get('/health', (_req, res) => {
 });
 
 // API Routes
+app.use('/api/auth', authRouter);
 app.use('/api/poses', posesRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/favorites', favoritesRouter);

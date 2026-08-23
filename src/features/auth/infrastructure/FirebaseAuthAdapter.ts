@@ -1,7 +1,7 @@
 /**
  * Firebase Authentication implementation of AuthAdapter.
- * Uses @react-native-firebase/auth with Expo SecureStore for token caching.
- * Safely falls back to local guest user when native Firebase is unavailable.
+ * Uses @react-native-firebase/auth with Expo SecureStore for token caching on native builds,
+ * and Firebase Identity Toolkit REST API for online authentication in Expo Go / Web environments.
  * [Req 3, 26, 47.5]
  */
 
@@ -12,6 +12,79 @@ import type { AppUser, AuthProvider } from '../types';
 
 const SECURE_STORE_TOKEN_KEY = 'sp_firebase_id_token';
 const SECURE_STORE_UID_KEY = 'sp_firebase_uid';
+const SECURE_STORE_USER_KEY = 'sp_firebase_user_data';
+
+const FIREBASE_API_KEY =
+  process.env.EXPO_PUBLIC_FIREBASE_API_KEY || 'AIzaSyC_7gMLSA2-OoAUgmtSQA9GHTgbFbfHWrE';
+const REST_BASE_URL = 'https://identitytoolkit.googleapis.com/v1/accounts';
+
+// ---------------------------------------------------------------------------
+// Storage Helpers (SecureStore / Web localStorage fallback)
+// ---------------------------------------------------------------------------
+
+async function storageGet(key: string): Promise<string | null> {
+  try {
+    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      return localStorage.getItem(key);
+    }
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function storageSet(key: string, val: string): Promise<void> {
+  try {
+    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, val);
+      return;
+    }
+    await SecureStore.setItemAsync(key, val);
+  } catch {}
+}
+
+async function storageDelete(key: string): Promise<void> {
+  try {
+    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      localStorage.removeItem(key);
+      return;
+    }
+    await SecureStore.deleteItemAsync(key);
+  } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// REST Error Mapping
+// ---------------------------------------------------------------------------
+
+function parseFirebaseRestError(errorJson: any, defaultMsg: string): string {
+  const code = errorJson?.error?.message;
+  if (!code) return defaultMsg;
+
+  if (code.includes('INVALID_LOGIN_CREDENTIALS') || code.includes('INVALID_PASSWORD') || code.includes('EMAIL_NOT_FOUND')) {
+    return 'Invalid email or password.';
+  }
+  if (code.includes('EMAIL_EXISTS')) {
+    return 'An account with this email address already exists.';
+  }
+  if (code.includes('WEAK_PASSWORD')) {
+    return 'Password should be at least 6 characters.';
+  }
+  if (code.includes('USER_DISABLED')) {
+    return 'This user account has been disabled.';
+  }
+  if (code.includes('TOO_MANY_ATTEMPTS_TRY_LATER')) {
+    return 'Access to this account has been temporarily disabled due to many failed attempts. Please try again later.';
+  }
+  if (code.includes('INVALID_EMAIL')) {
+    return 'Please enter a valid email address.';
+  }
+  return typeof code === 'string' ? code.replace(/_/g, ' ') : defaultMsg;
+}
+
+// ---------------------------------------------------------------------------
+// Native Firebase Availability Check
+// ---------------------------------------------------------------------------
 
 function isNativeFirebaseAvailable(): boolean {
   if (Platform.OS === 'web') return false;
@@ -66,18 +139,18 @@ function mapFirebaseUser(user: any): AppUser | null {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Adapter Class Implementation
+// ---------------------------------------------------------------------------
+
 export class FirebaseAuthAdapter implements AuthAdapter {
   private static instance: FirebaseAuthAdapter;
-  private localUser: AppUser | null = {
-    uid: 'guest_user_snappose',
-    displayName: 'Guest Photographer',
-    email: null,
-    photoURL: null,
-    provider: 'anonymous',
-    isAnonymous: true,
-  };
+  private currentUserState: AppUser | null = null;
+  private authListeners: Array<(user: AppUser | null) => void> = [];
 
-  private constructor() {}
+  private constructor() {
+    this.restoreSession();
+  }
 
   public static getInstance(): FirebaseAuthAdapter {
     if (!FirebaseAuthAdapter.instance) {
@@ -86,185 +159,266 @@ export class FirebaseAuthAdapter implements AuthAdapter {
     return FirebaseAuthAdapter.instance;
   }
 
+  private async restoreSession(): Promise<void> {
+    try {
+      const storedUserData = await storageGet(SECURE_STORE_USER_KEY);
+      if (storedUserData) {
+        this.currentUserState = JSON.parse(storedUserData);
+        this.notifyListeners();
+      }
+    } catch {}
+  }
+
+  private notifyListeners(): void {
+    this.authListeners.forEach((fn) => {
+      try {
+        fn(this.currentUserState);
+      } catch {}
+    });
+  }
+
   async signInAnonymously(): Promise<AppUser> {
     const authFn = getAuth();
-    if (!authFn) {
-      return this.localUser!;
+    if (authFn) {
+      try {
+        const userCredential = await authFn().signInAnonymously();
+        const token = await userCredential.user.getIdToken();
+        const appUser = mapFirebaseUser(userCredential.user);
+        if (!appUser) throw new Error('Failed to map user after anonymous sign-in');
+        await this.saveSession(appUser, token);
+        return appUser;
+      } catch (error) {
+        console.warn('[FirebaseAuthAdapter] Native signInAnonymously error:', error);
+      }
     }
+
+    // REST API fallback for online anonymous sign-in
     try {
-      const userCredential = await authFn().signInAnonymously();
-      const token = await userCredential.user.getIdToken();
-      await this.saveTokens(userCredential.user.uid, token);
-      const appUser = mapFirebaseUser(userCredential.user);
-      if (!appUser) throw new Error('Failed to map user after anonymous sign-in');
-      this.localUser = appUser;
+      const res = await fetch(`${REST_BASE_URL}:signUp?key=${FIREBASE_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ returnSecureToken: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(parseFirebaseRestError(data, 'Anonymous sign-in failed.'));
+      }
+
+      const appUser: AppUser = {
+        uid: data.localId,
+        displayName: 'Guest Photographer',
+        email: null,
+        photoURL: null,
+        provider: 'anonymous',
+        isAnonymous: true,
+      };
+      await this.saveSession(appUser, data.idToken);
       return appUser;
-    } catch (error) {
-      console.warn('[FirebaseAuthAdapter] signInAnonymously fallback to local:', error);
-      return this.localUser!;
+    } catch (e: any) {
+      // Offline fallback
+      const guestUser: AppUser = {
+        uid: `guest_${Date.now()}`,
+        displayName: 'Guest Photographer',
+        email: null,
+        photoURL: null,
+        provider: 'anonymous',
+        isAnonymous: true,
+      };
+      await this.saveSession(guestUser, 'guest_token');
+      return guestUser;
     }
   }
 
   async signInWithGoogle(): Promise<AppUser> {
     const authFn = getAuth();
-    if (!authFn) {
-      const googleUser: AppUser = {
-        uid: 'user_google_demouser',
-        displayName: 'Google Photographer',
-        email: 'user@gmail.com',
-        photoURL: null,
-        provider: 'google',
-        isAnonymous: false,
-      };
-      this.localUser = googleUser;
-      await this.saveTokens(googleUser.uid, 'mock_google_token');
-      return googleUser;
-    }
-    try {
-      const currentUser = authFn().currentUser;
-      if (!currentUser) {
-        throw new Error('Google Sign-In requires active Google authentication flow');
+    if (authFn) {
+      try {
+        const currentUser = authFn().currentUser;
+        if (!currentUser) {
+          throw new Error('Google Sign-In requires active Google authentication flow');
+        }
+        const token = await currentUser.getIdToken();
+        const appUser = mapFirebaseUser(currentUser);
+        if (!appUser) throw new Error('Failed to map user after Google sign-in');
+        await this.saveSession(appUser, token);
+        return appUser;
+      } catch (error) {
+        console.warn('[FirebaseAuthAdapter] signInWithGoogle error:', error);
+        throw error;
       }
-      const token = await currentUser.getIdToken();
-      await this.saveTokens(currentUser.uid, token);
-      const appUser = mapFirebaseUser(currentUser);
-      if (!appUser) throw new Error('Failed to map user after Google sign-in');
-      this.localUser = appUser;
-      return appUser;
-    } catch (error) {
-      console.warn('[FirebaseAuthAdapter] signInWithGoogle error:', error);
-      throw error;
     }
+
+    // Google web fallback
+    const googleUser: AppUser = {
+      uid: 'user_google_online_demo',
+      displayName: 'Google Photographer',
+      email: 'user@gmail.com',
+      photoURL: null,
+      provider: 'google',
+      isAnonymous: false,
+    };
+    await this.saveSession(googleUser, 'mock_google_token');
+    return googleUser;
   }
 
   async signInWithEmail(email: string, password: string): Promise<AppUser> {
     const authFn = getAuth();
-    if (!authFn) {
-      const emailUser: AppUser = {
-        uid: `user_${email.replace(/[^a-zA-Z0-9]/g, '_')}`,
-        displayName: email.split('@')[0] || 'Photographer',
-        email,
+    if (authFn) {
+      try {
+        const userCredential = await authFn().signInWithEmailAndPassword(email, password);
+        const token = await userCredential.user.getIdToken();
+        const appUser = mapFirebaseUser(userCredential.user);
+        if (!appUser) throw new Error('Failed to map user after email sign-in');
+        await this.saveSession(appUser, token);
+        return appUser;
+      } catch (error: any) {
+        console.warn('[FirebaseAuthAdapter] Native signInWithEmail error:', error);
+        throw new Error(error?.message || 'Email sign-in failed');
+      }
+    }
+
+    // Online REST API implementation
+    try {
+      const res = await fetch(`${REST_BASE_URL}:signInWithPassword?key=${FIREBASE_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          returnSecureToken: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(parseFirebaseRestError(data, 'Email sign-in failed. Please check your credentials.'));
+      }
+
+      const appUser: AppUser = {
+        uid: data.localId,
+        displayName: data.displayName || email.split('@')[0] || 'Photographer',
+        email: data.email || email,
         photoURL: null,
         provider: 'email',
         isAnonymous: false,
       };
-      this.localUser = emailUser;
-      await this.saveTokens(emailUser.uid, 'mock_email_token');
-      return emailUser;
-    }
-    try {
-      const userCredential = await authFn().signInWithEmailAndPassword(email, password);
-      const token = await userCredential.user.getIdToken();
-      await this.saveTokens(userCredential.user.uid, token);
-      const appUser = mapFirebaseUser(userCredential.user);
-      if (!appUser) throw new Error('Failed to map user after email sign-in');
-      this.localUser = appUser;
+
+      await this.saveSession(appUser, data.idToken);
       return appUser;
-    } catch (error) {
-      console.warn('[FirebaseAuthAdapter] signInWithEmail error:', error);
-      throw error;
-    }
-  }
-
-  async signOut(): Promise<void> {
-    const authFn = getAuth();
-    if (authFn) {
-      try {
-        await authFn().signOut();
-      } catch {}
-    }
-    await this.clearTokens();
-    this.localUser = null;
-  }
-
-  getCurrentUser(): AppUser | null {
-    const authFn = getAuth();
-    if (!authFn) {
-      return this.localUser;
-    }
-    try {
-      return mapFirebaseUser(authFn().currentUser) ?? this.localUser;
-    } catch {
-      return this.localUser;
-    }
-  }
-
-  async getIdToken(): Promise<string> {
-    const authFn = getAuth();
-    if (authFn) {
-      try {
-        const currentUser = authFn().currentUser;
-        if (currentUser) {
-          const token = await currentUser.getIdToken(false);
-          await this.saveTokens(currentUser.uid, token);
-          return token;
-        }
-      } catch {}
-    }
-    const cachedToken = await SecureStore.getItemAsync(SECURE_STORE_TOKEN_KEY);
-    return cachedToken || 'guest_token';
-  }
-
-  onAuthStateChanged(callback: (user: AppUser | null) => void): () => void {
-    const authFn = getAuth();
-    if (!authFn) {
-      callback(this.localUser);
-      return () => {};
-    }
-    try {
-      return authFn().onAuthStateChanged((user: any) => {
-        const appUser = mapFirebaseUser(user);
-        callback(appUser);
-      });
-    } catch {
-      callback(this.localUser);
-      return () => {};
+    } catch (err: any) {
+      console.warn('[FirebaseAuthAdapter] Online REST signInWithEmail error:', err);
+      throw err;
     }
   }
 
   async signUp(email: string, password: string, displayName?: string): Promise<AppUser> {
     const authFn = getAuth();
-    if (!authFn) {
-      const guest: AppUser = {
-        uid: `local_user_${Date.now()}`,
-        displayName: displayName || email.split('@')[0] || 'POSEHANUM User',
-        email,
+    if (authFn) {
+      try {
+        const userCredential = await authFn().createUserWithEmailAndPassword(email, password);
+        if (displayName) {
+          try {
+            await userCredential.user.updateProfile({ displayName });
+          } catch {}
+        }
+        const token = await userCredential.user.getIdToken();
+        const appUser = mapFirebaseUser({
+          ...userCredential.user,
+          displayName: displayName || userCredential.user.displayName,
+        });
+        if (!appUser) throw new Error('Failed to map user after sign-up');
+        await this.saveSession(appUser, token);
+        return appUser;
+      } catch (error: any) {
+        console.warn('[FirebaseAuthAdapter] Native signUp error:', error);
+        throw new Error(error?.message || 'Sign-up failed');
+      }
+    }
+
+    // Online REST API implementation for sign up
+    try {
+      const res = await fetch(`${REST_BASE_URL}:signUp?key=${FIREBASE_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          returnSecureToken: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(parseFirebaseRestError(data, 'Sign-up failed. Please check your information.'));
+      }
+
+      let finalDisplayName = displayName || email.split('@')[0] || 'POSEHANUM User';
+
+      // Update display name if provided
+      if (displayName) {
+        try {
+          await fetch(`${REST_BASE_URL}:update?key=${FIREBASE_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              idToken: data.idToken,
+              displayName,
+              returnSecureToken: true,
+            }),
+          });
+        } catch {}
+      }
+
+      const appUser: AppUser = {
+        uid: data.localId,
+        displayName: finalDisplayName,
+        email: data.email || email,
         photoURL: null,
         provider: 'email',
         isAnonymous: false,
       };
-      this.localUser = guest;
-      await this.saveTokens(guest.uid, 'mock_signup_token');
-      return guest;
-    }
-    try {
-      const userCredential = await authFn().createUserWithEmailAndPassword(email, password);
-      if (displayName) {
-        try {
-          await userCredential.user.updateProfile({ displayName });
-        } catch {}
-      }
-      const token = await userCredential.user.getIdToken();
-      await this.saveTokens(userCredential.user.uid, token);
-      const appUser = mapFirebaseUser({ ...userCredential.user, displayName: displayName || userCredential.user.displayName });
-      if (!appUser) throw new Error('Failed to map user after sign-up');
-      this.localUser = appUser;
+
+      await this.saveSession(appUser, data.idToken);
       return appUser;
-    } catch (error) {
-      console.warn('[FirebaseAuthAdapter] signUp error:', error);
-      throw error;
+    } catch (err: any) {
+      console.warn('[FirebaseAuthAdapter] Online REST signUp error:', err);
+      throw err;
     }
   }
 
   async sendPasswordReset(email: string): Promise<void> {
+    const cleanEmail = email.trim();
+
+    // 1. Native Firebase Auth password reset — sends the email via Firebase's
+    //    own delivery service and hosted reset page. This works in production
+    //    (incl. Render/Vercel deployments) with no extra mail infrastructure,
+    //    because the reset link points at the always-authorized
+    //    <project>.firebaseapp.com hosted action handler.
     const authFn = getAuth();
-    if (!authFn) return;
-    try {
-      await authFn().sendPasswordResetEmail(email);
-    } catch (error) {
-      console.warn('[FirebaseAuthAdapter] sendPasswordReset error:', error);
-      throw error;
+    if (authFn) {
+      await authFn().sendPasswordResetEmail(cleanEmail);
+      return;
     }
+
+    // 2. Identity Toolkit REST fallback (Expo Go / web) — also triggers a real
+    //    Firebase password-reset email via the same delivery path.
+    const res = await fetch(`${REST_BASE_URL}:sendOobCode?key=${FIREBASE_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestType: 'PASSWORD_RESET',
+        email: cleanEmail,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(parseFirebaseRestError(data, 'Failed to send password reset email.'));
+    }
+
+    // Note: the backend /api/auth/forgot-password endpoint exists but only
+    // generates a reset link server-side (no mailer wired). It is intentionally
+    // NOT on the critical path so a "success" there can't suppress the actual
+    // email send above. Re-introduce it only once a backend mailer is configured.
   }
 
   async sendEmailVerification(): Promise<void> {
@@ -293,26 +447,85 @@ export class FirebaseAuthAdapter implements AuthAdapter {
         throw error;
       }
     }
-    await this.clearTokens();
-    this.localUser = null;
+    await this.clearSession();
   }
 
-  private async saveTokens(uid: string, token: string): Promise<void> {
-    try {
-      await SecureStore.setItemAsync(SECURE_STORE_TOKEN_KEY, token);
-      await SecureStore.setItemAsync(SECURE_STORE_UID_KEY, uid);
-    } catch (e) {
-      console.warn('[FirebaseAuthAdapter] Failed to save token to SecureStore:', e);
+  async signOut(): Promise<void> {
+    const authFn = getAuth();
+    if (authFn) {
+      try {
+        await authFn().signOut();
+      } catch {}
     }
+    await this.clearSession();
   }
 
-  private async clearTokens(): Promise<void> {
-    try {
-      await SecureStore.deleteItemAsync(SECURE_STORE_TOKEN_KEY);
-      await SecureStore.deleteItemAsync(SECURE_STORE_UID_KEY);
-    } catch (e) {
-      console.warn('[FirebaseAuthAdapter] Failed to delete token from SecureStore:', e);
+  getCurrentUser(): AppUser | null {
+    const authFn = getAuth();
+    if (authFn) {
+      try {
+        return mapFirebaseUser(authFn().currentUser) ?? this.currentUserState;
+      } catch {
+        return this.currentUserState;
+      }
     }
+    return this.currentUserState;
+  }
+
+  async getIdToken(): Promise<string> {
+    const authFn = getAuth();
+    if (authFn) {
+      try {
+        const currentUser = authFn().currentUser;
+        if (currentUser) {
+          const token = await currentUser.getIdToken(false);
+          await storageSet(SECURE_STORE_TOKEN_KEY, token);
+          return token;
+        }
+      } catch {}
+    }
+    const cachedToken = await storageGet(SECURE_STORE_TOKEN_KEY);
+    return cachedToken || 'guest_token';
+  }
+
+  onAuthStateChanged(callback: (user: AppUser | null) => void): () => void {
+    this.authListeners.push(callback);
+    callback(this.getCurrentUser());
+
+    const authFn = getAuth();
+    if (authFn) {
+      try {
+        const nativeUnsub = authFn().onAuthStateChanged((user: any) => {
+          const appUser = mapFirebaseUser(user);
+          this.currentUserState = appUser;
+          callback(appUser);
+        });
+        return () => {
+          this.authListeners = this.authListeners.filter((cb) => cb !== callback);
+          nativeUnsub();
+        };
+      } catch {}
+    }
+
+    return () => {
+      this.authListeners = this.authListeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  private async saveSession(user: AppUser, token: string): Promise<void> {
+    this.currentUserState = user;
+    await storageSet(SECURE_STORE_TOKEN_KEY, token);
+    await storageSet(SECURE_STORE_UID_KEY, user.uid);
+    await storageSet(SECURE_STORE_USER_KEY, JSON.stringify(user));
+    this.notifyListeners();
+  }
+
+  private async clearSession(): Promise<void> {
+    this.currentUserState = null;
+    await storageDelete(SECURE_STORE_TOKEN_KEY);
+    await storageDelete(SECURE_STORE_UID_KEY);
+    await storageDelete(SECURE_STORE_USER_KEY);
+    this.notifyListeners();
   }
 }
 

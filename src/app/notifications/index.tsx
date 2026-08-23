@@ -32,6 +32,7 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/constants/theme';
 import { BorderRadius, Colors, Spacing } from '@/constants/designTokens';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { notificationService } from '@/features/notifications/infrastructure/LocalNotificationService';
 import { SPIcon } from '@/components/atoms/SPIcon';
 import { SPToast, useToast } from '@/components/molecules/SPToast';
 import { AnimatedPressable } from '@/components/motion/AnimatedPressable';
@@ -106,7 +107,6 @@ export default function NotificationsScreen() {
   const snoozeNotif = useNotificationStore((s) => s.snoozeNotification);
   const recordOpen = useNotificationStore((s) => s.recordOpen);
   const recordDelivery = useNotificationStore((s) => s.recordDelivery);
-  const testTrigger = useNotificationStore((s) => s.testTriggerNotification);
   const getAnalyticsSummary = useNotificationStore((s) => s.getAnalyticsSummary);
 
   const [activeFilter, setActiveFilter] = useState<FilterCategory>('ALL');
@@ -184,6 +184,14 @@ export default function NotificationsScreen() {
     const chosen = candidatePool[Math.floor(Math.random() * candidatePool.length)];
 
     if (chosen) {
+      // Fire a REAL device-level notification (heads-up pop-up), not just an in-app row.
+      notificationService
+        .triggerNativeDeviceNotification(chosen.title, chosen.body, {
+          messageId: chosen.id,
+          category: chosen.category,
+          deepLink: chosen.deepLink,
+        })
+        .catch(() => {});
       recordDelivery({
         messageId: chosen.id,
         title: chosen.title,
@@ -391,9 +399,10 @@ export default function NotificationsScreen() {
                   : 'You have no delivered notifications in this category.'}
               </Text>
               <AnimatedPressable
-                onPress={() => {
-                  testTrigger();
-                  showToast({ message: 'Triggered AI notification test!', variant: 'success' });
+                onPress={async () => {
+                  triggerHaptic();
+                  await notificationService.testTriggerPersonalityNotification();
+                  showToast({ message: 'Triggered device popup notification!', variant: 'success' });
                 }}
                 scaleTo={0.96}
                 style={styles.testBtn}

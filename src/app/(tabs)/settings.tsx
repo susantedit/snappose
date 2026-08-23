@@ -49,6 +49,7 @@ import { AnimatedBottomSheet } from '@/components/motion/AnimatedBottomSheet';
 import { MotionSprings, useReducedMotion } from '@/constants/motion';
 import { mmkv } from '@/database/mmkv/mmkvClient';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { notificationService } from '@/features/notifications/infrastructure/LocalNotificationService';
 import { usePrivacyData } from '@/features/privacy';
 import type { OutfitCategory } from '@/features/personalization';
 import type { NotificationToneFilter } from '@/features/notifications/types';
@@ -249,21 +250,16 @@ export default function SettingsScreen() {
   const notifPreferences = useNotificationStore((s) => s.preferences);
   const updateNotifPreferences = useNotificationStore((s) => s.updatePreferences);
   const resetNotifHistory = useNotificationStore((s) => s.resetNotificationHistory);
-  const testTriggerNotif = useNotificationStore((s) => s.testTriggerNotification);
 
-  const handleTestNotification = () => {
-    const result = testTriggerNotif();
-    if (result) {
-      showToast({
-        message: `[${result.message.title}] ${result.message.body}`,
-        variant: 'success',
-      });
-    } else {
-      showToast({
-        message: 'Notifications are disabled or quiet hours are active.',
-        variant: 'info',
-      });
-    }
+  const handleTestNotification = async () => {
+    // Fire a REAL device-level notification (heads-up pop-up), not an in-app toast.
+    const result = await notificationService.testTriggerPersonalityNotification();
+    showToast({
+      message: result?.message
+        ? `Sent to your device: ${result.message.title}`
+        : 'Test notification sent to your device.',
+      variant: 'success',
+    });
   };
 
   const handleResetNotifications = () => {

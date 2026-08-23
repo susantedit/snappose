@@ -12,6 +12,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -222,8 +223,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     opacity: fadeOpacity.value,
   }));
 
+  // Memoize the context value so consumers (every screen, tab bar, cards)
+  // don't re-render on unrelated ThemeProvider re-renders.
+  const contextValue = useMemo<ThemeContextValue>(
+    () => ({ theme: activeTheme, themeMode, setThemeMode }),
+    [activeTheme, themeMode, setThemeMode],
+  );
+
   return (
-    <ThemeContext.Provider value={{ theme: activeTheme, themeMode, setThemeMode }}>
+    <ThemeContext.Provider value={contextValue}>
       <View style={styles.container}>
         {children}
         {/* Cross-fade overlay — renders above children, never intercepts touches */}

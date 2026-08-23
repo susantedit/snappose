@@ -19,6 +19,7 @@ import type { CameraView } from 'expo-camera';
 import { getDb } from '@/database/sqlite/db';
 import { insertCapturedPhoto } from '@/database/sqlite/capturedPhotoDao';
 import { checkCaptureAllowed, recordCapture } from '@/features/camera/domain/CaptureRateLimit';
+import { notificationService } from '@/features/notifications/infrastructure/LocalNotificationService';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,6 +100,7 @@ export function useCapturePhoto(
         const rateLimitCheck = checkCaptureAllowed();
         if (!rateLimitCheck.allowed) {
           setIsLimitReached(true);
+          notificationService.sendLimitWarningNotification(0, rateLimitCheck.limit);
           return null;
         }
 
@@ -161,6 +163,11 @@ export function useCapturePhoto(
 
         // ── Step 5: Increment MMKV capture count ──────────────────────────
         recordCapture();
+        const postCheck = checkCaptureAllowed();
+        const remaining = postCheck.limit - postCheck.captureCount;
+        if (remaining <= 2 && remaining >= 0) {
+          notificationService.sendLimitWarningNotification(remaining, postCheck.limit);
+        }
 
         // ── Step 6: Analytics event ────────────────────────────────────────
         emitPhotoCaptureEvent({ poseId, aiScore, timestamp: capturedAt, width, height });

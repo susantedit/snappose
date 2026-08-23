@@ -47,6 +47,7 @@ import { useFavorites } from '@/features/favorites/hooks/useFavorites';
 import { usePersonalizationStore } from '@/stores/personalizationStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import { SNAP_POSE_CATEGORIES, SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
+import { prefetchPoseImages } from '@/utils/imageUtils';
 import type { Pose } from '@/features/poses/types';
 
 import { SPTposeHero } from '@/features/poses/components/SPTposeHero';
@@ -132,14 +133,14 @@ export default function HomeScreen() {
   const reduceMotion = useReducedMotion();
   const scrollViewRef = useRef<Animated.ScrollView>(null);
 
-  // Personalization Engine Store
-  const {
-    getRecommendedPoses,
-    recordSignal,
-    isPersonalizationEnabled,
-    outfitPreference,
-    profile,
-  } = usePersonalizationStore();
+  // Personalization Engine Store — granular selectors so the Home screen only
+  // re-renders when the specific slices it uses change (not on every signal).
+  const getRecommendedPoses = usePersonalizationStore((s) => s.getRecommendedPoses);
+  const recordSignal = usePersonalizationStore((s) => s.recordSignal);
+  const isPersonalizationEnabled = usePersonalizationStore((s) => s.isPersonalizationEnabled);
+  const outfitPreference = usePersonalizationStore((s) => s.outfitPreference);
+  const profile = usePersonalizationStore((s) => s.profile);
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [coupleModalPose, setCoupleModalPose] = useState<Pose | null>(null);
@@ -265,19 +266,23 @@ export default function HomeScreen() {
     [isFavorite, toggleFavorite, recordSignal, showToast],
   );
 
-  // Prefetch top poses for instant detail load
+  // Prefetch top poses of the tapped category into the expo-image cache so the
+  // grid repaints instantly when the filter changes.
   const handleCategorySelect = useCallback((catId: string) => {
     setSelectedCategory(catId);
     const targetPoses = catId === 'all'
       ? SNAP_POSE_DATASET.slice(0, 8)
       : SNAP_POSE_DATASET.filter((p) => p.categoryId === catId).slice(0, 8);
-    const urlsToPrefetch = targetPoses
-      .map((p) => p.imageUrl || p.thumbnailUrl)
-      .filter(Boolean);
-    import('@/services/storage/ImageCacheService').then(({ imageCacheService }) => {
-      imageCacheService.prefetchImages(urlsToPrefetch);
-    });
+    prefetchPoseImages(targetPoses.map((p) => p.imageUrl), 600);
   }, []);
+
+  const handleChipSelect = useCallback(
+    (id: string) => {
+      handleCategorySelect(id);
+      recordSignal({ type: 'CATEGORY_OPENED', categoryId: id });
+    },
+    [handleCategorySelect, recordSignal],
+  );
 
   const isDark = theme.mode === 'dark';
 
@@ -333,7 +338,7 @@ export default function HomeScreen() {
                 color={isDark ? '#FFF' : Colors.textPrimary}
                 strokeWidth={2}
               />
-              {useNotificationStore.getState().unreadCount > 0 && (
+              {unreadCount > 0 && (
                 <View
                   style={{
                     position: 'absolute',
@@ -426,13 +431,7 @@ export default function HomeScreen() {
                 id={cat.id}
                 name={cat.name}
                 isSelected={selectedCategory === cat.id}
-                onSelect={(id) => {
-                  handleCategorySelect(id);
-                  recordSignal({
-                    type: 'CATEGORY_OPENED',
-                    categoryId: id,
-                  });
-                }}
+                onSelect={handleChipSelect}
               />
             ))}
           </ScrollView>
@@ -477,7 +476,7 @@ export default function HomeScreen() {
                     width={155}
                     height={200}
                     variant="editorial"
-                    onPress={(id) => handleOpenPose(id)}
+                    onPress={handleOpenPose}
                     onFavoritePress={handleToggleFavorite}
                   />
                 </View>
@@ -515,7 +514,7 @@ export default function HomeScreen() {
                     width={150}
                     height={195}
                     variant="editorial"
-                    onPress={(id) => handleOpenPose(id)}
+                    onPress={handleOpenPose}
                     onFavoritePress={handleToggleFavorite}
                   />
                 </View>
@@ -652,7 +651,7 @@ export default function HomeScreen() {
                   width={COLUMN_WIDTH}
                   height={height}
                   variant="editorial"
-                  onPress={(id) => handleOpenPose(id)}
+                  onPress={handleOpenPose}
                   onFavoritePress={handleToggleFavorite}
                 />
               </Animated.View>
@@ -683,7 +682,7 @@ export default function HomeScreen() {
                   width={COLUMN_WIDTH}
                   height={height}
                   variant="editorial"
-                  onPress={(id) => handleOpenPose(id)}
+                  onPress={handleOpenPose}
                   onFavoritePress={handleToggleFavorite}
                 />
               </Animated.View>

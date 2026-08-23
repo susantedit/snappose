@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import type { AppUser } from '../features/auth/types';
 import { firebaseAuthAdapter } from '../features/auth/infrastructure/FirebaseAuthAdapter';
+import { setTokenProvider } from '../services/api/client';
 
 interface AuthState {
   user: AppUser | null;
@@ -30,6 +31,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   initialize: () => {
     set({ isLoading: true });
+
+    // Wire the API client so every request attaches a fresh Firebase ID token.
+    // Without this, the request interceptor has no token provider and all
+    // protected backend routes (captures, favorites, …) silently 401.
+    setTokenProvider(() => firebaseAuthAdapter.getIdToken());
+
     // Set initial user if exists
     const initialUser = firebaseAuthAdapter.getCurrentUser();
     if (initialUser) {

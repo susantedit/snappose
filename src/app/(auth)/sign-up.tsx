@@ -93,7 +93,10 @@ export default function SignUpScreen() {
 
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await signUp(email.trim(), password, displayName.trim());
-    router.replace('/(auth)/complete-profile');
+    // The store swallows auth errors into `error`; only advance on real success.
+    if (useAuthStore.getState().user) {
+      router.replace('/(auth)/complete-profile');
+    }
   };
 
   const displayedError = localError || error;

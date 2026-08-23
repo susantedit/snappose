@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  cancelAnimation,
   interpolate,
   useAnimatedStyle,
   useSharedValue,
@@ -32,7 +33,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 
-import { getPoseImageSource } from '@/utils/imageUtils';
+import { SPFastImage } from '@/components/atoms/SPFastImage';
+import { prefetchPoseImages } from '@/utils/imageUtils';
 
 import { useTheme } from '@/constants/theme';
 import { BorderRadius, Colors, Spacing, Typography } from '@/constants/designTokens';
@@ -98,12 +100,18 @@ export const SPPoseCard = React.memo(function SPPoseCard({
   const shimmerProgress = useSharedValue(0);
 
   useEffect(() => {
+    // Only animate the skeleton while the image is loading; stop the UI-thread
+    // loop once it paints to avoid a permanent background animation per card.
+    if (imageLoaded) {
+      cancelAnimation(shimmerProgress);
+      return;
+    }
     shimmerProgress.value = withRepeat(
       withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.ease) }),
       -1,
       true
     );
-  }, [shimmerProgress]);
+  }, [shimmerProgress, imageLoaded]);
 
   const shimmerStyle = useAnimatedStyle(() => ({
     opacity: interpolate(shimmerProgress.value, [0, 0.5, 1], [0.35, 0.85, 0.35]),
@@ -117,9 +125,9 @@ export const SPPoseCard = React.memo(function SPPoseCard({
 
   const handlePressIn = useCallback(() => {
     if (imageUri) {
-      import('@/services/storage/ImageCacheService').then(({ imageCacheService }) => {
-        imageCacheService.prefetchImages([imageUri]);
-      });
+      // Warm the full-resolution variant into the same expo-image cache the
+      // detail hero reads from, so the next screen paints instantly.
+      prefetchPoseImages([imageUri]);
     }
     if (!reduceMotion) {
       scale.value = withTiming(0.965, { duration: MotionDurations.fast });
@@ -211,10 +219,13 @@ export const SPPoseCard = React.memo(function SPPoseCard({
         )}
 
         {imageUri ? (
-          <Animated.Image
-            source={getPoseImageSource(imageUri)}
+          <SPFastImage
+            source={imageUri}
+            targetWidth={600}
+            priority="normal"
             style={[styles.image, animatedImageStyle, { opacity: imageLoaded ? 1 : 0 }]}
-            resizeMode="cover"
+            contentFit="cover"
+            transitionDuration={150}
             onLoad={() => setImageLoaded(true)}
             accessibilityLabel={`${name} reference pose image`}
           />
