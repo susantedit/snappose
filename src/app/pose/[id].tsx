@@ -48,10 +48,12 @@ import { SNAP_POSE_DATASET } from '@/features/poses/data/posesData';
 import { useFavorites } from '@/features/favorites/hooks/useFavorites';
 import { usePersonalizationStore } from '@/stores/personalizationStore';
 import { getPoseImageSource } from '@/utils/imageUtils';
+import { Image as ExpoImage } from 'expo-image';
 import { SPCoupleVerificationModal } from '@/components/organisms/SPCoupleVerificationModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_IMAGE_HEIGHT = SCREEN_WIDTH * 1.15;
+const AnimatedExpoImage: React.ComponentType<any> = Animated.createAnimatedComponent(ExpoImage as any);
 
 export default function PoseDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -342,10 +344,12 @@ export default function PoseDetailScreen() {
               ]}
             />
           )}
-          <Animated.Image
+          <AnimatedExpoImage
             source={getPoseImageSource(pose.imageUrl)}
             style={[styles.heroImage, heroImageStyle, { opacity: heroImageLoaded ? 1 : 0 }]}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={200}
             onLoad={() => setHeroImageLoaded(true)}
           />
           <View style={styles.heroGradientOverlay} />

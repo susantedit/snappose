@@ -72,7 +72,10 @@ export function setTokenProvider(fn: () => Promise<string | null>): void {
 // Axios instance factory
 // ---------------------------------------------------------------------------
 
-const BASE_URL = process.env.EXPO_PUBLIC_MONGODB_API_URL ?? 'http://localhost:3000/api';
+// Falls back to the local backend (which listens on port 4000 — see backend/src/index.ts)
+// only when EXPO_PUBLIC_MONGODB_API_URL is unset. In production this env var points at the
+// deployed backend (Render/Vercel).
+const BASE_URL = process.env.EXPO_PUBLIC_MONGODB_API_URL ?? 'http://localhost:4000/api';
 
 export const apiClient: AxiosInstance = axios.create({
   baseURL: BASE_URL,

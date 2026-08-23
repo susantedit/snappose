@@ -102,25 +102,47 @@ export default function SignInScreen() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const handleEmailSignIn = async () => {
-    if (!email.trim() || !password) return;
+    setLocalError(null);
     clearError();
+    if (!email.trim() || !password) {
+      setLocalError('Please enter your email and password.');
+      return;
+    }
+    if (!EMAIL_RE.test(email.trim())) {
+      setLocalError('Please enter a valid email address.');
+      return;
+    }
     await signInWithEmail(email.trim(), password);
-    router.replace('/(tabs)');
+    // The store swallows auth errors into `error`; only navigate on real success.
+    if (useAuthStore.getState().user) {
+      router.replace('/(tabs)');
+    }
   };
 
   const handleGuestSignIn = async () => {
+    setLocalError(null);
     clearError();
     await signInAnonymously();
-    router.replace('/(tabs)');
+    if (useAuthStore.getState().user) {
+      router.replace('/(tabs)');
+    }
   };
 
   const handleGoogleSignIn = async () => {
+    setLocalError(null);
     clearError();
     await signInWithGoogle();
-    router.replace('/(tabs)');
+    if (useAuthStore.getState().user) {
+      router.replace('/(tabs)');
+    }
   };
+
+  const displayedError = localError || error;
 
   return (
     <KeyboardAvoidingView
@@ -173,10 +195,10 @@ export default function SignInScreen() {
               />
 
               {/* Error */}
-              {error && (
+              {displayedError && (
                 <Animated.View entering={FadeInDown} style={styles.errorBox}>
                   <SPIcon name="warning" size={14} color={Colors.error} />
-                  <Text style={styles.errorText}>{error}</Text>
+                  <Text style={styles.errorText}>{displayedError}</Text>
                 </Animated.View>
               )}
 

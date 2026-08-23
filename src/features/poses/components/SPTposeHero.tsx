@@ -11,12 +11,12 @@
 
 import React, { useCallback, useState } from 'react';
 import {
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SPFastImage } from '@/components/atoms/SPFastImage';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -114,10 +114,11 @@ export function SPTposeHero({ onExplorePress }: SPTposeHeroProps) {
   return (
     <Animated.View entering={FadeIn.duration(500)} style={styles.heroCard}>
       {/* Background Visual Image Card — Robert Downey Jr Tony Stark Image */}
-      <Image
+      <SPFastImage
         source={TONY_STARK_IMAGE}
         style={styles.backgroundImage}
-        resizeMode="cover"
+        contentFit="cover"
+        transitionDuration={200}
       />
       <View style={styles.gradientOverlay} pointerEvents="none" />
 

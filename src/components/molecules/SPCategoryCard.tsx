@@ -6,7 +6,6 @@
 
 import React, { useCallback } from 'react';
 import {
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -14,6 +13,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { SPFastImage } from '@/components/atoms/SPFastImage';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -55,7 +55,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 // SPCategoryCard
 // ---------------------------------------------------------------------------
 
-export function SPCategoryCard({
+export const SPCategoryCard = React.memo(function SPCategoryCard({
   slug,
   name,
   poseCount,
@@ -96,10 +96,13 @@ export function SPCategoryCard({
     >
       {/* Background image */}
       {imageUri ? (
-        <Image
-          source={{ uri: imageUri }}
+        <SPFastImage
+          source={imageUri}
+          targetWidth={800}
+          priority="normal"
           style={StyleSheet.absoluteFill}
-          resizeMode="cover"
+          contentFit="cover"
+          transitionDuration={150}
           accessibilityElementsHidden
         />
       ) : (
@@ -134,7 +137,7 @@ export function SPCategoryCard({
       )}
     </AnimatedPressable>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Styles

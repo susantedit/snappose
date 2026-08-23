@@ -85,6 +85,12 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> =>
     plugins: [
       'expo-router',
       [
+        'expo-notifications',
+        {
+          color: '#65744A',
+        },
+      ],
+      [
         'expo-camera',
         {
           cameraPermission:
