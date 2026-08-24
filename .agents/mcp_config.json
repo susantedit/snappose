@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "seo-auditor": {
+      "command": "node",
+      "args": ["f:/snappose/.agents/plugins/seo-tools/scripts/seo-server.js"]
+    }
+  }
+}

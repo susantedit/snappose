@@ -22,5 +22,13 @@
     "requestedAt": "2026-08-24T05:51:27.108Z",
     "status": "QUEUED_FOR_PURGE",
     "adminNotificationSentTo": "susantedit@gmail.com"
+  },
+  {
+    "referenceId": "DEL-720635-POSE",
+    "email": "programsupdater@gmail.com",
+    "reason": "gggggggggggggggggggg",
+    "requestedAt": "2026-08-24T05:53:39.892Z",
+    "status": "QUEUED_FOR_PURGE",
+    "adminNotificationSentTo": "susantedit@gmail.com"
   }
 ]
