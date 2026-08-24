@@ -184,6 +184,70 @@ export class NotificationIntelligenceEngine {
     };
   }
 
+  /**
+   * Evaluates and returns a diverse set of distinct, unexhausted messages from the 100+
+   * repository mapped across daytime slots, preventing repetitive notifications.
+   */
+  evaluateDailySchedule(
+    context: NotificationEngineContext,
+    preferences: NotificationPreferences,
+    slots: Array<{ hour: number; minute: number }>,
+  ): Array<{ hour: number; minute: number; message: NotificationPersonalityMessage }> {
+    if (!preferences.enabled) return [];
+
+    const usedIds = new Set<string>(context.recentDeliveredMessageIds);
+    const selectedResults: Array<{ hour: number; minute: number; message: NotificationPersonalityMessage }> = [];
+
+    for (const slot of slots) {
+      const slotTimeWindow = this._getTimeWindow(slot.hour);
+
+      // Find candidates matching time window or general category that haven't been selected yet
+      let candidates = this.messages.filter((m) => {
+        if (usedIds.has(m.id)) return false;
+        if (m.category === 'COMEBACK' && (context.lastActiveTimestamp ? (Date.now() - context.lastActiveTimestamp) < 48 * 3600 * 1000 : true)) {
+          return false; // only use COMEBACK if inactive
+        }
+        if (m.timeWindow && m.timeWindow !== 'any' && m.timeWindow !== slotTimeWindow) {
+          return false;
+        }
+        return true;
+      });
+
+      // If no candidates for exact slot, relax time window filter
+      if (candidates.length === 0) {
+        candidates = this.messages.filter((m) => !usedIds.has(m.id));
+      }
+
+      // If all 150+ messages have been exhausted, reset usedIds to cycle pool
+      if (candidates.length === 0) {
+        usedIds.clear();
+        candidates = this.messages;
+      }
+
+      // Pick the best scored candidate for this slot
+      const scored = candidates.map((m) => {
+        let score = Math.random() * 20; // gentle random jitter to keep daily rotation fresh
+        if (m.timeWindow === slotTimeWindow) score += 30;
+        if (slot.hour >= 17 && slot.hour <= 19 && (m.id.includes('gold') || m.category === 'SPECIAL_EVENT')) score += 40;
+        if (slot.hour >= 8 && slot.hour <= 10 && m.category === 'DAILY_MOTIVATION') score += 25;
+        if (m.targetCategories?.some((c) => context.favoriteCategories.includes(c.toLowerCase()))) score += 30;
+        return { message: m, score };
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+      const chosen = scored[0]?.message || this.messages[0];
+
+      usedIds.add(chosen.id);
+      selectedResults.push({
+        hour: slot.hour,
+        minute: slot.minute,
+        message: chosen,
+      });
+    }
+
+    return selectedResults;
+  }
+
   // ---------------------------------------------------------------------------
   // Helper Methods
   // ---------------------------------------------------------------------------

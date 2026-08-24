@@ -30,7 +30,7 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> =>
     ...config,
     name: 'POSEHANUM',
     slug: 'posehanum',
-    version: '1.0.0',
+    version: '1.1',
     orientation: 'portrait',
     icon: './assets/icon.png',
     userInterfaceStyle: 'automatic',
@@ -57,7 +57,7 @@ export default ({ config }: ConfigContext): ExpoConfig & Record<string, any> =>
     },
     android: {
       package: 'com.snappose.app',
-      versionCode: 1,
+      versionCode: 2,
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#F6F1E7',

@@ -230,59 +230,80 @@ export class FirebaseAuthAdapter implements AuthAdapter {
   }
 
   async signInWithGoogle(): Promise<AppUser> {
-    const authFn = getAuth();
-    if (authFn) {
-      try {
-        const currentUser = authFn().currentUser;
-        if (currentUser) {
-          const token = await currentUser.getIdToken();
-          const appUser = mapFirebaseUser(currentUser);
-          if (appUser) {
-            await this.saveSession(appUser, token);
-            return appUser;
-          }
-        }
+    const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
 
-        const { GoogleSignin } = require('@react-native-google-signin/google-signin');
-        const authModule = require('@react-native-firebase/auth');
-        const auth = authModule.default || authModule;
+    try {
+      const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+      const authModule = require('@react-native-firebase/auth');
+      const auth = authModule.default || authModule;
 
-        GoogleSignin.configure({
-          webClientId:
-            process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
-            '115860319222-xyz.apps.googleusercontent.com',
-        });
-
-        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-        const signInResult = await GoogleSignin.signIn();
-        const idToken = signInResult.data?.idToken || (signInResult as any).idToken;
-
-        if (idToken && auth?.GoogleAuthProvider) {
-          const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-          const userCredential = await auth().signInWithCredential(googleCredential);
-          const token = await userCredential.user.getIdToken();
-          const appUser = mapFirebaseUser(userCredential.user);
-          if (appUser) {
-            await this.saveSession(appUser, token);
-            return appUser;
-          }
-        }
-      } catch (error) {
-        console.warn('[FirebaseAuthAdapter] signInWithGoogle native error:', error);
+      if (webClientId) {
+        GoogleSignin.configure({ webClientId });
+      } else {
+        GoogleSignin.configure();
       }
+
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const signInResult = await GoogleSignin.signIn();
+
+      let idToken: string | null = null;
+      if (signInResult && typeof signInResult === 'object') {
+        if (signInResult.type === 'success' && signInResult.data?.idToken) {
+          idToken = signInResult.data.idToken;
+        } else if (signInResult.data?.idToken) {
+          idToken = signInResult.data.idToken;
+        } else if ((signInResult as any).idToken) {
+          idToken = (signInResult as any).idToken;
+        }
+      }
+
+      if (!idToken) {
+        try {
+          const tokens = await GoogleSignin.getTokens();
+          idToken = tokens.idToken;
+        } catch {}
+      }
+
+      if (idToken && auth?.GoogleAuthProvider) {
+        const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+        const userCredential = await auth().signInWithCredential(googleCredential);
+        const token = await userCredential.user.getIdToken();
+        const appUser = mapFirebaseUser(userCredential.user);
+        if (appUser) {
+          await this.saveSession(appUser, token);
+          return appUser;
+        }
+      }
+
+      // If user info is available from GoogleSignin directly
+      const googleUserObj = signInResult?.data?.user || (signInResult as any)?.user;
+      if (googleUserObj) {
+        const appUser: AppUser = {
+          uid: googleUserObj.id || `google_${Date.now()}`,
+          displayName: googleUserObj.name || 'Google User',
+          email: googleUserObj.email || null,
+          photoURL: googleUserObj.photo || null,
+          provider: 'google',
+          isAnonymous: false,
+        };
+        await this.saveSession(appUser, idToken || `google_token_${Date.now()}`);
+        return appUser;
+      }
+    } catch (error: any) {
+      console.warn('[FirebaseAuthAdapter] Google Sign-In error:', error);
+      if (error?.code === 'SIGN_IN_CANCELLED' || error?.message?.includes('cancel')) {
+        throw new Error('Google sign-in was cancelled.');
+      }
+      if (error?.code === 'PLAY_SERVICES_NOT_AVAILABLE') {
+        throw new Error('Google Play Services is not available or outdated on this device.');
+      }
+      if (error?.code === 'DEVELOPER_ERROR' || error?.message?.includes('DEVELOPER_ERROR')) {
+        throw new Error('Google Sign-In configuration error: Please check your SHA-1 fingerprint and Web Client ID in Firebase Console.');
+      }
+      throw new Error(error?.message || 'Google sign-in failed. Please try email or guest login.');
     }
 
-    // Fallback Google Sign-In session
-    const googleUser: AppUser = {
-      uid: `google_${Date.now()}`,
-      displayName: 'Google User',
-      email: 'google.user@gmail.com',
-      photoURL: null,
-      provider: 'google',
-      isAnonymous: false,
-    };
-    await this.saveSession(googleUser, `google_token_${Date.now()}`);
-    return googleUser;
+    throw new Error('Google sign-in could not be completed. Please try with Email or Guest.');
   }
 
   async signInWithEmail(email: string, password: string): Promise<AppUser> {
@@ -456,6 +477,45 @@ export class FirebaseAuthAdapter implements AuthAdapter {
     } catch (error) {
       console.warn('[FirebaseAuthAdapter] sendEmailVerification error:', error);
     }
+  }
+
+  async updateProfile(displayName: string): Promise<AppUser> {
+    const authFn = getAuth();
+    if (authFn) {
+      try {
+        const currentUser = authFn().currentUser;
+        if (currentUser) {
+          await currentUser.updateProfile({ displayName });
+        }
+      } catch (e) {
+        console.warn('[FirebaseAuthAdapter] native updateProfile error:', e);
+      }
+    }
+
+    // REST API update (works in Expo Go / web too)
+    try {
+      const token = await storageGet(SECURE_STORE_TOKEN_KEY);
+      if (token && token !== 'guest_token') {
+        await fetch(`${REST_BASE_URL}:update?key=${FIREBASE_API_KEY}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idToken: token,
+            displayName,
+            returnSecureToken: false,
+          }),
+        });
+      }
+    } catch (e) {
+      console.warn('[FirebaseAuthAdapter] REST updateProfile error:', e);
+    }
+
+    const updated: AppUser = {
+      ...(this.currentUserState as AppUser),
+      displayName,
+    };
+    await this.saveSession(updated, (await storageGet(SECURE_STORE_TOKEN_KEY)) || 'guest_token');
+    return updated;
   }
 
   async deleteAccount(): Promise<void> {

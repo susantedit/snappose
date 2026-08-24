@@ -74,6 +74,8 @@ import {
   Bell,
   Moon,
   Target,
+  LogOut,
+  Mail,
   type LucideIcon,
 } from 'lucide-react-native';
 import { useTheme } from '@/constants/theme';
@@ -125,6 +127,10 @@ export const ICON_REGISTRY: Record<string, LucideIcon> = {
   rotate: RotateCcw,
   eye: Eye,
   eyeOff: EyeOff,
+  logout: LogOut,
+  signOut: LogOut,
+  mail: Mail,
+  email: Mail,
 
   // Camera Tools
   flash: Zap,

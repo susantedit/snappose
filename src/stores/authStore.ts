@@ -19,6 +19,7 @@ interface AuthState {
   signUp: (email: string, pass: string, displayName?: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   sendEmailVerification: () => Promise<void>;
+  updateProfile: (displayName: string) => Promise<void>;
   deleteAccount: () => Promise<void>;
   signOut: () => Promise<void>;
   clearError: () => void;
@@ -107,6 +108,16 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ isLoading: false });
     } catch (err: any) {
       set({ error: err?.message || 'Failed to send verification email', isLoading: false });
+    }
+  },
+
+  updateProfile: async (displayName: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const updated = await firebaseAuthAdapter.updateProfile(displayName);
+      set({ user: updated, isLoading: false });
+    } catch (err: any) {
+      set({ error: err?.message || 'Profile update failed', isLoading: false });
     }
   },
 

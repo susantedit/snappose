@@ -13,7 +13,9 @@ import {
  * Falls back to the AdMob test ID in non-production environments.
  */
 const AD_UNIT_ID: string =
-  process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID ?? TestIds.INTERSTITIAL;
+  __DEV__ || !process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID
+    ? TestIds.INTERSTITIAL
+    : process.env.EXPO_PUBLIC_ADMOB_INTERSTITIAL_ID;
 
 /**
  * useInterstitialAd — manages pre-loading and frequency-capped showing

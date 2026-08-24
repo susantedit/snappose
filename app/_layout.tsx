@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, useTheme } from '@/constants/theme';
 import { mmkv } from '@/database/mmkv/mmkvClient';
 import { MMKV_KEYS } from '@/database/mmkv/keys';
+import { notificationService } from '@/features/notifications/infrastructure/LocalNotificationService';
 
 /**
  * React Query client — configured once at root level.
@@ -28,11 +29,12 @@ const queryClient = new QueryClient({
 function InnerLayout() {
   const { theme } = useTheme();
 
-  // MMKV hydration — mark first launch complete so splash can route correctly.
+  // MMKV hydration — mark first launch complete and schedule default notifications
   useEffect(() => {
     const isFirst = mmkv.getBoolean(MMKV_KEYS.FIRST_LAUNCH);
-    if (isFirst === undefined) {
-      mmkv.set(MMKV_KEYS.FIRST_LAUNCH, true);
+    if (isFirst === undefined || isFirst === true) {
+      mmkv.set(MMKV_KEYS.FIRST_LAUNCH, false);
+      notificationService.scheduleDefaultNotificationsOnInstall().catch(() => {});
     }
   }, []);
 

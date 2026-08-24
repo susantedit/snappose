@@ -140,9 +140,11 @@ export function SPShotBuilder() {
       {/* Generated Recipe Result Box */}
       <Animated.View entering={FadeInDown.duration(350)} style={styles.recipeBox}>
         <View style={styles.recipeHeader}>
-          <View>
+          <View style={styles.recipeTitleCol}>
             <Text style={styles.recipeTag}>THE SHOT RECIPE</Text>
-            <Text style={styles.recipePoseName}>{shotRecipe.poseName}</Text>
+            <Text style={styles.recipePoseName} numberOfLines={1} ellipsizeMode="tail">
+              {shotRecipe.poseName}
+            </Text>
           </View>
           <View style={styles.difficultyBadge}>
             <Text style={styles.difficultyVal}>{shotRecipe.difficulty}</Text>
@@ -253,9 +255,15 @@ const styles = StyleSheet.create({
   },
   recipeHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 10,
+    width: '100%',
+  },
+  recipeTitleCol: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 8,
   },
   recipeTag: {
     color: Colors.olive,
@@ -265,28 +273,34 @@ const styles = StyleSheet.create({
   },
   recipePoseName: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
+    flexShrink: 1,
   },
   difficultyBadge: {
-    alignItems: 'flex-end',
-    backgroundColor: 'rgba(101, 116, 74, 0.2)',
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(101, 116, 74, 0.25)',
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(101, 116, 74, 0.3)',
+    borderColor: 'rgba(101, 116, 74, 0.4)',
+    minWidth: 50,
   },
   difficultyVal: {
     color: '#B7FF00',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textAlign: 'center',
   },
   difficultyLbl: {
     color: '#A0A696',
     fontSize: 8,
     fontWeight: '700',
+    textAlign: 'center',
   },
   directivesGrid: {
     flexDirection: 'row',

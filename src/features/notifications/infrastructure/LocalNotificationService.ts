@@ -20,6 +20,10 @@
 import { Platform } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { usePersonalizationStore } from '@/stores/personalizationStore';
+import { useHistoryStore } from '@/stores/historyStore';
+import { NotificationIntelligenceEngine } from '../domain/NotificationIntelligenceEngine';
+import { SNAP_POSE_NOTIFICATION_MESSAGES } from '../data/notificationMessages';
 import type { NotificationSelectionResult } from '../types';
 
 type NotificationsModule = typeof import('expo-notifications');
@@ -190,7 +194,7 @@ export class LocalNotificationService {
 
     this.scheduledIds.add(result.message.id);
     await this.triggerNativeDeviceNotification(
-      'POSEHANUM Daily Direction',
+      'Snap Pose',
       result.message.title,
       { notificationId: result.message.id }
     );
@@ -199,21 +203,22 @@ export class LocalNotificationService {
   }
 
   /**
-   * Delivers an immediate device-level test notification popup for user verification.
+   * Delivers a test notification popup — only called when user explicitly taps
+   * "Test Notification" in settings. Never called automatically.
    */
   async testTriggerPersonalityNotification(): Promise<NotificationSelectionResult | null> {
     const store = useNotificationStore.getState();
     const result = store.testTriggerNotification();
     if (result?.message) {
       await this.triggerNativeDeviceNotification(
-        'POSEHANUM Test Alert',
+        'Snap Pose',
         result.message.title,
         { notificationId: result.message.id, test: true }
       );
     } else {
       await this.triggerNativeDeviceNotification(
-        'POSEHANUM Test Alert',
-        'Your test notification is working! Direct device-level popup active.',
+        'Snap Pose',
+        'Notifications are working! You will receive pose inspiration here.',
         { test: true }
       );
     }
@@ -221,19 +226,114 @@ export class LocalNotificationService {
   }
 
   /**
-   * Sends a device-level system popup alert when user is approaching or hit capture limits.
+   * Limit warning notification — intentionally suppressed from auto-firing.
+   * Only trigger this explicitly from a user-initiated UI action (e.g. a "Notify me" button).
+   * Auto-firing on every capture creates notification fatigue and unexpected popups.
+   *
+   * Call `notificationService.sendLimitWarningNotification()` only from user intent.
    */
-  async sendLimitWarningNotification(remainingCaptures: number, maxLimit: number): Promise<void> {
-    const title = '⚡ POSEHANUM Limit Alert';
-    const body = remainingCaptures <= 0
-      ? `Your daily capture limit of ${maxLimit} has been reached! Upgrade or watch an ad for bonus captures.`
-      : `Your limit is gonna reach! Only ${remainingCaptures} capture${remainingCaptures === 1 ? '' : 's'} remaining today.`;
+  async sendLimitWarningNotification(_remainingCaptures: number, _maxLimit: number): Promise<void> {
+    // No-op: notification suppressed. Use the explicit in-app SPCaptureLimitModal instead.
+    return;
+  }
 
-    await this.triggerNativeDeviceNotification(title, body, {
-      type: 'LIMIT_WARNING',
-      remainingCaptures,
-      maxLimit,
-    });
+  /**
+   * Schedules initial welcome and 11 distinct daily recurring personality inspiration
+   * notifications dynamically selected from the 100+ SNAP_POSE_NOTIFICATION_MESSAGES library,
+   * rotating without repeating recently delivered messages.
+   */
+  async scheduleDefaultNotificationsOnInstall(): Promise<void> {
+    try {
+      const N = getNotifications();
+      if (!N) return;
+
+      const hasPerm = await this.requestPermission();
+      if (!hasPerm) return;
+
+      // Cancel any old scheduled notifications to prevent duplicates
+      await N.cancelAllScheduledNotificationsAsync();
+
+      const notifStore = useNotificationStore.getState();
+      const profile = usePersonalizationStore.getState().profile;
+      const historyAttempts = useHistoryStore.getState().attempts;
+
+      const engine = new NotificationIntelligenceEngine(SNAP_POSE_NOTIFICATION_MESSAGES);
+
+      // 1. Initial Welcome Personality Notification (10 seconds post-install)
+      const motivations = SNAP_POSE_NOTIFICATION_MESSAGES.filter(
+        (m) => m.category === 'DAILY_MOTIVATION' || m.id.startsWith('mot-'),
+      );
+      const welcomeMsg = motivations[0] || {
+        title: 'Your camera roll called 📸',
+        body: 'It said you’ve been standing like 🧍 for too long. Let’s fix that.',
+        deepLink: '/(tabs)',
+      };
+
+      await N.scheduleNotificationAsync({
+        content: {
+          title: welcomeMsg.title,
+          body: welcomeMsg.body,
+          data: { deepLink: welcomeMsg.deepLink || '/(tabs)' },
+          sound: 'default',
+          priority: N.AndroidNotificationPriority.HIGH,
+        },
+        trigger: {
+          seconds: 10,
+        } as any,
+      });
+
+      // 2. 24/7 Round-the-Clock 20-Minute Interval Recurring Slots (All 24 Hours, 72 Slots/Day)
+      const TWENTY_FOUR_HOUR_SLOTS: Array<{ hour: number; minute: number }> = [];
+      for (let hour = 0; hour < 24; hour++) {
+        for (let min = 0; min < 60; min += 20) {
+          TWENTY_FOUR_HOUR_SLOTS.push({ hour, minute: min });
+        }
+      }
+
+      const scheduledItems = engine.evaluateDailySchedule(
+        {
+          currentTime: new Date(),
+          lastActiveTimestamp: notifStore.history[0]?.timestamp ?? Date.now(),
+          favoriteCategories: Object.keys(profile.preferredCategories || {}),
+          favoritePosesCount: 0,
+          totalAttempts: historyAttempts.length,
+          recentDeliveredMessageIds: notifStore.exhaustedMessageIds,
+          consecutiveIgnoredCount: 0,
+          bestScore: historyAttempts.length > 0 ? Math.max(...historyAttempts.map((a) => a.score)) : 80,
+          streakDays: 1,
+        },
+        notifStore.preferences,
+        TWENTY_FOUR_HOUR_SLOTS,
+      );
+
+      for (const item of scheduledItems) {
+        await N.scheduleNotificationAsync({
+          content: {
+            title: item.message.title,
+            body: item.message.body,
+            data: { deepLink: item.message.deepLink || '/(tabs)', notificationId: item.message.id },
+            sound: 'default',
+            priority: N.AndroidNotificationPriority.DEFAULT,
+          },
+          trigger: {
+            hour: item.hour,
+            minute: item.minute,
+            repeats: true,
+          } as any,
+        });
+
+        // Record in store to prevent repeating the same message for at least a month
+        notifStore.recordDelivery({
+          messageId: item.message.id,
+          title: item.message.title,
+          body: item.message.body,
+          category: item.message.category,
+          deepLink: item.message.deepLink || '/(tabs)',
+        });
+      }
+    } catch (e) {
+      console.warn('[NotificationService] scheduleDefaultNotificationsOnInstall error:', e);
+    }
   }
 
   async cancelAllNotifications(): Promise<void> {

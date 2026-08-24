@@ -24,7 +24,9 @@ import {
 // ---------------------------------------------------------------------------
 
 const AD_UNIT_ID =
-  process.env.EXPO_PUBLIC_ADMOB_REWARDED_ID ?? TestIds.REWARDED;
+  __DEV__ || !process.env.EXPO_PUBLIC_ADMOB_REWARDED_ID
+    ? TestIds.REWARDED
+    : process.env.EXPO_PUBLIC_ADMOB_REWARDED_ID;
 
 // ---------------------------------------------------------------------------
 // Types
