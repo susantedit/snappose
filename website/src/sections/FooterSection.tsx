@@ -29,14 +29,15 @@ export function FooterSection() {
 
           <div>
             <h4 className="text-xs font-mono font-black text-textPrimary uppercase tracking-wider mb-4">
-              Navigation
+              Explore & Features
             </h4>
-            <ul className="space-y-2.5 text-sm font-semibold">
-              <li><a href="#" className="hover:text-primary transition-colors">Home</a></li>
-              <li><a href="#how-it-works" className="hover:text-primary transition-colors">How It Works</a></li>
-              <li><a href="#ai-coach" className="hover:text-primary transition-colors">AI Voice Coach</a></li>
-              <li><a href="#categories" className="hover:text-primary transition-colors">Pose Collections</a></li>
-              <li><a href="#personalization" className="hover:text-primary transition-colors">Personalization</a></li>
+            <ul className="space-y-2 text-sm font-semibold">
+              <li><Link href="/" className="hover:text-primary transition-colors">Home</Link></li>
+              <li><Link href="/features" className="hover:text-primary transition-colors">Features Directory</Link></li>
+              <li><Link href="/pose-guide" className="hover:text-primary transition-colors">Pose Guide Library</Link></li>
+              <li><Link href="/guides" className="hover:text-primary transition-colors">Photography Guides</Link></li>
+              <li><Link href="/blog" className="hover:text-primary transition-colors">Deep Dives & Blog</Link></li>
+              <li><Link href="/faq" className="hover:text-primary transition-colors">FAQ Knowledge Base</Link></li>
             </ul>
           </div>
 

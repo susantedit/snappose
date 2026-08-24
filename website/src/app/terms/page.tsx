@@ -1,15 +1,50 @@
+import type { Metadata } from 'next';
 import React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, FileText, Scale, Camera, AlertTriangle, Mail } from 'lucide-react';
 
-export const metadata = {
-  title: 'Terms of Service — POSEHANUM',
+export const metadata: Metadata = {
+  title: 'Terms of Service — POSEHANUM AI Camera & Pose Coach',
   description: 'Terms of Service, acceptable use policy, subscription terms, and user guidelines for POSEHANUM.',
+  keywords: ['POSEHANUM terms of service', 'AI pose coach terms', 'photography app terms'],
+  alternates: {
+    canonical: 'https://www.posehanum.tech/terms',
+  },
+  openGraph: {
+    title: 'Terms of Service — POSEHANUM AI Camera & Pose Coach',
+    description: 'Terms of Service, acceptable use policy, subscription terms, and user guidelines for POSEHANUM.',
+    url: 'https://www.posehanum.tech/terms',
+    siteName: 'POSEHANUM',
+    type: 'article',
+  },
+};
+
+const breadcrumbLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    {
+      '@type': 'ListItem',
+      position: 1,
+      name: 'Home',
+      item: 'https://www.posehanum.tech',
+    },
+    {
+      '@type': 'ListItem',
+      position: 2,
+      name: 'Terms of Service',
+      item: 'https://www.posehanum.tech/terms',
+    },
+  ],
 };
 
 export default function TermsOfServicePage() {
   return (
     <div className="min-h-screen bg-background text-textPrimary py-16 px-4 sm:px-6 lg:px-8">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
+      />
       <div className="max-w-4xl mx-auto space-y-12">
         {/* Navigation */}
         <div>

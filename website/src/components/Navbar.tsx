@@ -51,37 +51,43 @@ export function Navbar() {
         </Link>
 
         {/* Desktop Navigation Links */}
-        <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-textSecondary">
-          <a
-            href="#how-it-works"
+        <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-textSecondary">
+          <Link
+            href="/features"
             className="hover:text-primary transition-colors flex items-center gap-1.5"
           >
-            How It Works
-          </a>
-          <a
-            href="#ai-coach"
+            Features
+          </Link>
+          <Link
+            href="/pose-guide"
             className="hover:text-primary transition-colors flex items-center gap-1.5"
           >
-            <Mic className="w-3.5 h-3.5 text-cyanAccent" /> AI Coach
-          </a>
-          <a
-            href="#categories"
+            <Compass className="w-3.5 h-3.5 text-primary" /> Pose Library
+          </Link>
+          <Link
+            href="/guides"
             className="hover:text-primary transition-colors flex items-center gap-1.5"
           >
-            <Compass className="w-3.5 h-3.5 text-primary" /> Poses
-          </a>
-          <a
-            href="#personalization"
+            Guides
+          </Link>
+          <Link
+            href="/blog"
             className="hover:text-primary transition-colors flex items-center gap-1.5"
           >
-            <Brain className="w-3.5 h-3.5 text-orangeAccent" /> Personalization
-          </a>
+            <Sparkles className="w-3.5 h-3.5 text-primary" /> Blog
+          </Link>
+          <Link
+            href="/faq"
+            className="hover:text-primary transition-colors flex items-center gap-1.5"
+          >
+            FAQ
+          </Link>
         </nav>
 
         {/* CTA Button */}
         <div className="hidden md:flex items-center gap-4">
           <a
-            href="#download"
+            href="/#download"
             className="px-5 py-2.5 rounded-full bg-primary hover:bg-primary-hover text-[#0A0E0C] font-extrabold text-xs tracking-wider uppercase transition-all duration-300 shadow-neon-lime hover:shadow-[0_0_30px_rgba(183,255,0,0.6)] flex items-center gap-2"
           >
             <Sparkles className="w-4 h-4 text-[#0A0E0C] fill-[#0A0E0C]" />
@@ -102,37 +108,44 @@ export function Navbar() {
       {/* Mobile Dropdown Menu */}
       {mobileMenuOpen && (
         <div className="md:hidden bg-secondaryBg/95 backdrop-blur-2xl border-b border-surfaceBorder px-6 py-6 space-y-4 animate-in slide-in-from-top-4">
-          <a
-            href="#how-it-works"
+          <Link
+            href="/features"
             onClick={() => setMobileMenuOpen(false)}
             className="block text-base font-bold text-textPrimary hover:text-primary"
           >
-            How It Works
-          </a>
-          <a
-            href="#ai-coach"
+            All Features Directory
+          </Link>
+          <Link
+            href="/pose-guide"
             onClick={() => setMobileMenuOpen(false)}
             className="block text-base font-bold text-textPrimary hover:text-primary"
           >
-            AI Voice Coach
-          </a>
-          <a
-            href="#categories"
+            Visual Pose Guide Library
+          </Link>
+          <Link
+            href="/guides"
             onClick={() => setMobileMenuOpen(false)}
             className="block text-base font-bold text-textPrimary hover:text-primary"
           >
-            Pose Categories
-          </a>
-          <a
-            href="#personalization"
+            Photography Masterclass Guides
+          </Link>
+          <Link
+            href="/blog"
             onClick={() => setMobileMenuOpen(false)}
             className="block text-base font-bold text-textPrimary hover:text-primary"
           >
-            Machine Learning Engine
-          </a>
+            Deep Dives & Blog Hub
+          </Link>
+          <Link
+            href="/faq"
+            onClick={() => setMobileMenuOpen(false)}
+            className="block text-base font-bold text-textPrimary hover:text-primary"
+          >
+            Frequently Asked Questions (FAQ)
+          </Link>
           <div className="pt-2">
             <a
-              href="#download"
+              href="/#download"
               onClick={() => setMobileMenuOpen(false)}
               className="w-full py-3 rounded-xl bg-primary text-background font-black text-center text-xs tracking-wider uppercase flex items-center justify-center gap-2"
             >

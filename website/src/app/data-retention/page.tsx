@@ -1,15 +1,50 @@
+import type { Metadata } from 'next';
 import React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Clock, Database, Trash2, ShieldCheck, Mail } from 'lucide-react';
 
-export const metadata = {
-  title: 'Data Retention & Deletion Schedule — POSEHANUM',
+export const metadata: Metadata = {
+  title: 'Data Retention & Deletion Schedule — POSEHANUM AI Camera',
   description: 'Detailed Data Retention Policy and storage schedules for POSEHANUM in compliance with GDPR, CCPA, and Google Play policies.',
+  keywords: ['POSEHANUM data retention', 'data deletion schedule', 'GDPR compliance'],
+  alternates: {
+    canonical: 'https://www.posehanum.tech/data-retention',
+  },
+  openGraph: {
+    title: 'Data Retention & Deletion Schedule — POSEHANUM AI Camera',
+    description: 'Detailed Data Retention Policy and storage schedules for POSEHANUM in compliance with GDPR, CCPA, and Google Play policies.',
+    url: 'https://www.posehanum.tech/data-retention',
+    siteName: 'POSEHANUM',
+    type: 'article',
+  },
+};
+
+const breadcrumbLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    {
+      '@type': 'ListItem',
+      position: 1,
+      name: 'Home',
+      item: 'https://www.posehanum.tech',
+    },
+    {
+      '@type': 'ListItem',
+      position: 2,
+      name: 'Data Retention Schedule',
+      item: 'https://www.posehanum.tech/data-retention',
+    },
+  ],
 };
 
 export default function DataRetentionPage() {
   return (
     <div className="min-h-screen bg-background text-textPrimary py-16 px-4 sm:px-6 lg:px-8">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
+      />
       <div className="max-w-4xl mx-auto space-y-12">
         {/* Navigation */}
         <div>

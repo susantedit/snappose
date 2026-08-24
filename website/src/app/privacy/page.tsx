@@ -1,15 +1,50 @@
+import type { Metadata } from 'next';
 import React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShieldCheck, Lock, EyeOff, Server, Trash2, Mail } from 'lucide-react';
 
-export const metadata = {
-  title: 'Privacy Policy — POSEHANUM',
+export const metadata: Metadata = {
+  title: 'Privacy Policy — POSEHANUM AI Camera & Pose Coach',
   description: 'Learn how POSEHANUM protects your privacy with 100% on-device AI pose processing, zero camera frame uploads, and complete user data control.',
+  keywords: ['POSEHANUM privacy policy', 'on-device AI camera privacy', 'pose coach privacy', 'zero cloud upload photography'],
+  alternates: {
+    canonical: 'https://www.posehanum.tech/privacy',
+  },
+  openGraph: {
+    title: 'Privacy Policy — POSEHANUM AI Camera & Pose Coach',
+    description: 'Learn how POSEHANUM protects your privacy with 100% on-device AI pose processing, zero camera frame uploads, and complete user data control.',
+    url: 'https://www.posehanum.tech/privacy',
+    siteName: 'POSEHANUM',
+    type: 'article',
+  },
+};
+
+const breadcrumbLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    {
+      '@type': 'ListItem',
+      position: 1,
+      name: 'Home',
+      item: 'https://www.posehanum.tech',
+    },
+    {
+      '@type': 'ListItem',
+      position: 2,
+      name: 'Privacy Policy',
+      item: 'https://www.posehanum.tech/privacy',
+    },
+  ],
 };
 
 export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-background text-textPrimary py-16 px-4 sm:px-6 lg:px-8">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
+      />
       <div className="max-w-4xl mx-auto space-y-12">
         {/* Navigation */}
         <div>

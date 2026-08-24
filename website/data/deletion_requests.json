@@ -1,0 +1,26 @@
+[
+  {
+    "referenceId": "DEL-873312-POSE",
+    "email": "susanluitel1@gmail.com",
+    "reason": "gggg",
+    "requestedAt": "2026-08-24T05:47:05.708Z",
+    "status": "QUEUED_FOR_PURGE",
+    "adminNotificationSentTo": "susantedit@gmail.com"
+  },
+  {
+    "referenceId": "DEL-802634-POSE",
+    "email": "programsupdater@gmail.com",
+    "reason": "gggg",
+    "requestedAt": "2026-08-24T05:48:05.867Z",
+    "status": "QUEUED_FOR_PURGE",
+    "adminNotificationSentTo": "susantedit@gmail.com"
+  },
+  {
+    "referenceId": "DEL-218452-POSE",
+    "email": "programsupdater@gmail.com",
+    "reason": "ggg",
+    "requestedAt": "2026-08-24T05:51:27.108Z",
+    "status": "QUEUED_FOR_PURGE",
+    "adminNotificationSentTo": "susantedit@gmail.com"
+  }
+]

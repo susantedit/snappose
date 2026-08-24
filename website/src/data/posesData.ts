@@ -1,3 +1,4 @@
+
 export interface DemoPose {
   id: string;
   title: string;
@@ -72,9 +73,9 @@ export const SHOWCASE_POSES: DemoPose[] = [
     category: 'Nature',
     difficulty: 'medium',
     imageUrl: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=800&auto=format&fit=crop&q=80',
-    description: 'Serene over-the-shoulder look caught between tall pines and morning mist.',
+    description: 'Serene over-the-shoulder posture caught between tall pines and morning mist.',
     matchTarget: 93,
     tags: ['nature', 'serene', 'standing'],
-    coachingCue: 'Turn your torso 45° away and gently turn head back to camera.',
+    coachingCue: 'Turn your torso 45° away and gently turn head towards camera.',
   },
 ];

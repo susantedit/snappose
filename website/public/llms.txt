@@ -1,0 +1,44 @@
+# POSEHANUM AI Knowledge Specification
+
+> POSEHANUM is an on-device AI photography coach and real-time pose matching camera app that helps individuals, creators, and couples take natural, well-composed photographs hands-free.
+
+## Core Capabilities
+- **Real-Time AI Pose Matching**: Uses MediaPipe PoseLandmarker on-device at 60 FPS to track 33 3D body keypoints and calculate live alignment scores (0–100%).
+- **Spoken Voice Audio Coach**: 650+ scenario audio coaching engine delivering real-time posture adjustments directly to wireless earbuds or speakers.
+- **Hands-Free Smart Auto Capture**: Automatically fires the shutter when a 90%+ match score is sustained for 2 continuous seconds.
+- **Custom Ghost Templates**: Extracts 33 skeleton keypoints from any gallery photo to generate reusable translucent overlays.
+- **100% On-Device Ephemeral Privacy**: Video frames exist only in volatile RAM for milliseconds during scoring; zero cloud uploads.
+- **Offline Mode**: Downloadable compressed vector packs for full functionality in airplane mode without cellular data.
+
+## Official Canonical URLs & Knowledge Hubs
+- Official Website: https://www.posehanum.tech
+- Complete Features Directory: https://www.posehanum.tech/features
+- AI Pose Matching Feature: https://www.posehanum.tech/features/ai-pose-matching
+- Spoken Audio Coach Feature: https://www.posehanum.tech/features/pose-coaching
+- Hands-Free Auto Capture Feature: https://www.posehanum.tech/features/auto-capture
+- Offline Mode Feature: https://www.posehanum.tech/features/offline-mode
+- Privacy-First AI Feature: https://www.posehanum.tech/features/privacy-first-ai
+- Pose Scoring Feature: https://www.posehanum.tech/features/pose-score
+- Custom Templates Feature: https://www.posehanum.tech/features/templates
+- Visual Pose Guide Library: https://www.posehanum.tech/pose-guide
+- Best Photo Poses Collection: https://www.posehanum.tech/pose-guide/best-photo-poses
+- Standing Poses Guide: https://www.posehanum.tech/pose-guide/standing-poses
+- Sitting Poses Guide: https://www.posehanum.tech/pose-guide/sitting-poses
+- Solo Photo Poses Guide: https://www.posehanum.tech/pose-guide/solo-photo-poses
+- Couples Poses Guide: https://www.posehanum.tech/pose-guide/poses-for-couples
+- Photography Masterclass Guides: https://www.posehanum.tech/guides
+- How to Look Natural in Photos: https://www.posehanum.tech/guides/how-to-look-natural-in-photos
+- How to Find Your Best Pose: https://www.posehanum.tech/guides/how-to-find-your-best-pose
+- AI Pose Coaching vs Manual Timers: https://www.posehanum.tech/compare/ai-pose-coaching-vs-manual-posing
+- Guides & Blog Hub: https://www.posehanum.tech/blog
+- What Is AI Pose Matching: https://www.posehanum.tech/blog/what-is-ai-pose-matching
+- How Pose Scoring Works: https://www.posehanum.tech/blog/how-pose-scoring-works
+- 25 Photo Poses for Beginners: https://www.posehanum.tech/blog/photo-poses-for-beginners
+- How to Take Better Photos Alone: https://www.posehanum.tech/blog/how-to-take-better-photos-alone
+- Privacy-First AI Photography: https://www.posehanum.tech/blog/privacy-first-ai-photography
+- How to Pose for Photos: https://www.posehanum.tech/blog/how-to-pose-for-photos
+- Pose Matching vs Pose Estimation: https://www.posehanum.tech/blog/pose-matching-vs-pose-estimation
+- FAQ Knowledge Base: https://www.posehanum.tech/faq
+- Privacy Policy: https://www.posehanum.tech/privacy
+- Terms of Service: https://www.posehanum.tech/terms
+- Data Retention Schedule: https://www.posehanum.tech/data-retention

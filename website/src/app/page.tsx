@@ -17,6 +17,7 @@ import { PoseCategoriesSection } from '@/sections/PoseCategoriesSection';
 import { FindYourPoseSection } from '@/sections/FindYourPoseSection';
 import { BeforeAfterSection } from '@/sections/BeforeAfterSection';
 import { FeaturesGridSection } from '@/sections/FeaturesGridSection';
+import { FAQSection } from '@/sections/FAQSection';
 import { DownloadCTASection } from '@/sections/DownloadCTASection';
 import { FooterSection } from '@/sections/FooterSection';
 
@@ -77,10 +78,13 @@ export default function HomePage() {
       {/* 17. 12-Feature Deep Dive Grid */}
       <FeaturesGridSection />
 
-      {/* 18. Download CTA & Store Badges */}
+      {/* 18. Frequently Asked Questions & AEO Search Answers */}
+      <FAQSection />
+
+      {/* 19. Download CTA & Store Badges */}
       <DownloadCTASection />
 
-      {/* 19. Footer with 13 Social Creator Links */}
+      {/* 20. Footer with 13 Social Creator Links */}
       <FooterSection />
     </main>
   );

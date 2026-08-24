@@ -1,0 +1,51 @@
+# POSEHANUM — Technical Architecture & Capabilities Specification (llms-full.txt)
+
+> Official technical specification and complete feature manifest for POSEHANUM (https://www.posehanum.tech), the privacy-first AI pose coach and photography assistant application for Android and iOS.
+
+---
+
+## 1. System Architecture Overview
+
+POSEHANUM is built on a 100% on-device artificial intelligence architecture designed for zero cloud latency, zero biometric privacy risk, and full offline functionality.
+
+### Core Modules
+1. **Vision Engine**: MediaPipe PoseLandmarker & BlazeFace executing 60 FPS real-time 33-point anatomical keypoint tracking on device GPU/NPU.
+2. **Pose Match Calculator**: Real-time vector angle comparison engine calculating angular deviation across 33 keypoints against target reference matrices, producing a 0–100% match score.
+3. **Adaptive Voice Coach**: 650+ scenario audio coaching engine delivering micro-posture adjustments ("tilt chin 10° right", "shift weight to left leg") over Bluetooth earbuds or phone speaker.
+4. **Hands-Free Auto Capture**: Automated shutter trigger executing when target pose alignment (≥90% match score) is sustained for 2 seconds alongside smile and gaze lock criteria.
+5. **Context-Aware Recommendation Engine**: Multi-vector filter chain evaluating environment (Beach, Mountain, Cafe, Urban Streetwear) and outfit (Streetwear, Formal, Traditional) to rank ideal pose guides.
+6. **Custom Template Creator**: Landmark extraction pipeline converting gallery images into 33-keypoint translucent ghost overlays.
+7. **Offline Pose Pack Manager**: Local storage analyzer and downloader allowing users to cache high-resolution category packs for zero-data offline travel.
+
+---
+
+## 2. Anatomical Keypoints & Scoring Algorithm
+
+POSEHANUM tracks 33 3D keypoints:
+- **Head & Face**: Nose, inner/outer eyes, ears, mouth corners (keypoints 0–10).
+- **Upper Body & Arms**: Left/right shoulders, elbows, wrists, pinkies, index fingers, thumbs (keypoints 11–22).
+- **Lower Body & Legs**: Left/right hips, knees, ankles, heels, foot index tips (keypoints 23–32).
+
+### Match Score Calculation
+$$\text{MatchScore} = 100 \times \left(1 - \frac{1}{N} \sum_{i=1}^{N} w_i \cdot \frac{|\theta_{\text{user}, i} - \theta_{\text{target}, i}|}{180}\right)$$
+
+Where $\theta_i$ represents the relative angle between keypoint triplets (e.g. Shoulder-Elbow-Wrist angle) and $w_i$ represents joint visibility weights.
+
+---
+
+## 3. Privacy & Security Specifications
+
+- **Zero Cloud Uploads**: Live camera frames remain in volatile device RAM for milliseconds during scoring.
+- **Biometric Exemption**: Joint relative angles are non-reversible and cannot reconstruct facial biometric templates.
+- **Data Retention Controls**: Users can export full data bundles or permanently wipe profiles in Settings or online via `https://www.posehanum.tech/delete-account`.
+
+---
+
+## 4. Primary Web & Canonical References
+
+- **Homepage**: https://www.posehanum.tech
+- **Privacy Policy**: https://www.posehanum.tech/privacy
+- **Terms of Service**: https://www.posehanum.tech/terms
+- **Data Retention Schedule**: https://www.posehanum.tech/data-retention
+- **Delete Account Portal**: https://www.posehanum.tech/delete-account
+- **Developer Profile**: https://github.com/susantedit

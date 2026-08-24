@@ -50,7 +50,7 @@ export function DownloadCTASection() {
           className="mt-10 flex flex-wrap items-center justify-center gap-4"
         >
           <a
-            href="https://play.google.com/store"
+            href="https://play.google.com/store/apps/details?id=com.example.snappose"
             target="_blank"
             rel="noopener noreferrer"
             className="px-8 py-4 rounded-2xl bg-primary hover:bg-primary-hover text-[#0A0E0C] font-black text-sm tracking-wider uppercase transition-all duration-300 shadow-neon-lime flex items-center gap-3"

@@ -50,7 +50,7 @@ const GENERATED_POSES: Record<string, { title: string; image: string; tag: strin
   nature: [
     { title: 'Forest Pathway Wander', image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=800&auto=format&fit=crop&q=80', tag: 'Serene' },
     { title: 'Sunlit Clearing Stance', image: 'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?w=800&auto=format&fit=crop&q=80', tag: 'Standing' },
-    { title: 'Misty Pine Lookback', image: 'https://images.unsplash.com/photo-1426604966848-d7adac402bff?w=800&auto=format&fit=crop&q=80', tag: 'Atmospheric' },
+    { title: 'Misty Pine Over-Shoulder Glance', image: 'https://images.unsplash.com/photo-1426604966848-d7adac402bff?w=800&auto=format&fit=crop&q=80', tag: 'Atmospheric' },
   ],
 };
 

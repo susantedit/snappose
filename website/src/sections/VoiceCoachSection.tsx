@@ -164,15 +164,15 @@ export function VoiceCoachSection() {
             </h2>
 
             <p className="text-textSecondary text-base leading-relaxed">
-              No need to squint at your screen while standing 6 feet away. POSEHANUM whispers real-time, micro-posture adjustments directly to you: shifting weight, angling shoulders, or tilting your chin until the frame is magazine-ready.
+              No need to squint at your screen while standing 6 feet away. POSEHANUM draws from a massive 650+ scenario audio coaching engine, whispering real-time micro-posture adjustments and encouraging tips directly to you: shifting weight, angling shoulders, or tilting your chin until the frame is magazine-ready.
             </p>
 
             <ul className="space-y-3 pt-2">
               {[
+                '650+ scenario-based voice coaching prompts & motivation',
                 'Adapts coaching cadence based on your alignment speed',
                 'Natural, concise spoken prompts with zero audio lag',
                 'Works hands-free with earbuds or phone speaker',
-                'Suppresses repetitive prompts once locked in',
               ].map((benefit) => (
                 <li key={benefit} className="flex items-center gap-3 text-sm font-bold text-textPrimary">
                   <div className="w-2 h-2 rounded-full bg-cyanAccent" />

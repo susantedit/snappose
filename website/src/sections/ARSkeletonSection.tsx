@@ -81,13 +81,13 @@ export function ARSkeletonSection() {
             </h2>
 
             <p className="text-textSecondary text-base leading-relaxed">
-              POSEHANUM renders lightweight vector skeleton overlays directly on top of your live camera feed. As you move, glowing connection lines turn from cyan to vibrant neon green the moment your limbs lock into perfect reference position.
+              POSEHANUM renders high-performance Shopify Skia vector skeletons and translucent ghost silhouettes directly over your live camera viewfinder. Seamlessly toggle HUD modes while glowing joint segments transition dynamically (Green ≥71%, Orange 41–70%, Red ≤40%) the instant your posture aligns.
             </p>
 
             <div className="grid grid-cols-2 gap-4 pt-2">
               <div className="p-4 rounded-2xl bg-surface border border-surfaceBorder">
                 <div className="text-2xl font-mono font-black text-primary">60 FPS</div>
-                <div className="text-xs font-bold text-textSecondary uppercase mt-1">Zero-Lag Tracking</div>
+                <div className="text-xs font-bold text-textSecondary uppercase mt-1">Dual HUD Overlays</div>
               </div>
               <div className="p-4 rounded-2xl bg-surface border border-surfaceBorder">
                 <div className="text-2xl font-mono font-black text-cyanAccent">33 Points</div>

@@ -1,5 +1,12 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
+
+export const viewport: Viewport = {
+  themeColor: '#070A08',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+};
 
 export const metadata: Metadata = {
   title: 'POSEHANUM — AI Pose Coach & Photography Assistant',
@@ -54,6 +61,21 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  icons: {
+    icon: [
+      { url: '/icon.png', type: 'image/png' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    shortcut: '/icon.png',
+    apple: '/icon.png',
   },
 };
 
@@ -117,6 +139,83 @@ const jsonLd = {
       publisher: {
         '@id': 'https://www.posehanum.tech/#organization',
       },
+    },
+    {
+      '@type': 'HowTo',
+      '@id': 'https://www.posehanum.tech/#howto',
+      name: 'How to Recreate a Reference Pose with AI Pose Matching',
+      description: 'Step-by-step method to align your body posture with a reference photo using real-time AI guidance.',
+      step: [
+        {
+          '@type': 'HowToStep',
+          name: 'Select Reference Pose',
+          text: 'Choose a curated pose from categories or upload your own custom ghost template.',
+        },
+        {
+          '@type': 'HowToStep',
+          name: 'Follow Real-Time Skeleton Cues',
+          text: 'Align your limbs with the glowing AR skeleton overlay as colors transition from Orange to Lime Green.',
+        },
+        {
+          '@type': 'HowToStep',
+          name: 'Hold Alignment for Auto Capture',
+          text: 'Sustain a 90%+ match score for 2 seconds to automatically trigger the hands-free camera shutter.',
+        },
+      ],
+    },
+    {
+      '@type': 'FAQPage',
+      '@id': 'https://www.posehanum.tech/#faq',
+      mainEntity: [
+        {
+          '@type': 'Question',
+          name: 'What is POSEHANUM and how does it work?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'POSEHANUM is an AI-powered camera and pose coaching mobile app that uses real-time 33-point computer vision landmark detection, voice coaching, and smart auto-capture to help you take perfect photos.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'What is AI pose matching and how accurate is it?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'AI pose matching evaluates real-time human anatomical joint landmarks via MediaPipe neural models, calculating sub-millimeter angular deviation with 0–100% alignment scoring.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Are my live camera video frames uploaded to the cloud or saved anywhere?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Zero cloud uploads. POSEHANUM operates with a strict 100% on-device AI architecture. Live camera frames exist only in volatile RAM for milliseconds during active scoring.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'How does the spoken voice coach guide me when standing far from the phone?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'POSEHANUM features a 650+ scenario audio coaching engine that whispers real-time micro-posture corrections into your earbuds or speaker without needing to walk back to the screen.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'How does hands-free auto capture trigger the shutter?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'When your body posture aligns with the reference guide and sustains a 90%+ match score for 2 continuous seconds, POSEHANUM automatically fires the camera shutter.',
+          },
+        },
+        {
+          '@type': 'Question',
+          name: 'Can I use POSEHANUM offline during travel without internet access?',
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: 'Yes. POSEHANUM runs 100% offline in airplane mode with pre-downloadable category pose packs.',
+          },
+        },
+      ],
     },
   ],
 };
